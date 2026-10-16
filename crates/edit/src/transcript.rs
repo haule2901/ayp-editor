@@ -358,8 +358,6 @@ pub fn caption_blocks(words: &[SeqWord], rules: &CaptionRules, rate: FrameRate) 
         groups.push(a..words.len());
     }
     // text, frame-snapped times
-    let fd = rate.frame_duration();
-    let gap = Tick(fd.0 * rules.gap_frames.max(0));
     let mut out: Vec<CaptionBlock> = Vec::new();
     for g in groups {
         let mut text_lines: Vec<String> = vec![String::new()];
@@ -374,14 +372,28 @@ pub fn caption_blocks(words: &[SeqWord], rules: &CaptionRules, rate: FrameRate) 
                 text_lines.push(w.text.clone());
             }
         }
-        let start = rate.snap(words[g.start].start);
-        let mut end = rate.snap(words[g.end - 1].end);
-        if end < words[g.end - 1].end {
-            end += fd;
-        }
-        out.push(CaptionBlock { start, end: end.max(start + fd), text: text_lines.join("\n"), speaker: words[g.start].speaker.clone(), words: g });
+        let (start, end) = snap_span(words[g.start].start, words[g.end - 1].end, rate);
+        out.push(CaptionBlock { start, end, text: text_lines.join("\n"), speaker: words[g.start].speaker.clone(), words: g });
     }
-    // no overlaps, minimum duration (into the silence after a block, never over the next one)
+    place_blocks(out, rules, rate)
+}
+
+/// Snap a caption's span to frames: the start down, the end up (at least one frame long).
+pub(crate) fn snap_span(start: Tick, end: Tick, rate: FrameRate) -> (Tick, Tick) {
+    let fd = rate.frame_duration();
+    let start = rate.snap(start);
+    let mut e = rate.snap(end);
+    if e < end {
+        e += fd;
+    }
+    (start, e.max(start + fd))
+}
+
+/// No overlaps (keeping `gap_frames` between blocks) and the minimum duration (into the silence
+/// after a block, never over the next one).
+pub(crate) fn place_blocks(mut out: Vec<CaptionBlock>, rules: &CaptionRules, rate: FrameRate) -> Vec<CaptionBlock> {
+    let fd = rate.frame_duration();
+    let gap = Tick(fd.0 * rules.gap_frames.max(0));
     for i in 0..out.len() {
         if i > 0 {
             let min_start = out[i - 1].end + gap;

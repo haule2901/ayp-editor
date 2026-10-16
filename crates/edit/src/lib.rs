@@ -23,6 +23,7 @@ pub mod multicam;
 pub mod through;
 pub mod transcript;
 pub mod transitions;
+pub mod vi_captions;
 
 use std::collections::HashMap;
 

@@ -1,0 +1,127 @@
+{
+ "texts": [
+  {
+   "text": "một chín 38 là năm đó",
+   "prev": null,
+   "newSentence": true,
+   "expected": "1938 là năm đó"
+  },
+  {
+   "text": "tỷ lệ 7 nghiệp tăng",
+   "prev": "Năm nay",
+   "newSentence": false,
+   "expected": "tỷ lệ thất nghiệp tăng"
+  },
+  {
+   "text": "Hôm nay Người ta nói",
+   "prev": null,
+   "newSentence": true,
+   "expected": "Hôm nay người ta nói"
+  },
+  {
+   "text": "rồi Người ta nói",
+   "prev": "hôm nay",
+   "newSentence": false,
+   "expected": "rồi người ta nói"
+  },
+  {
+   "text": "anh ấy nói SAO vậy",
+   "prev": "ừ thì",
+   "newSentence": false,
+   "expected": "anh ấy nói sao vậy"
+  },
+  {
+   "text": "TẤT CẢ IN HOA",
+   "prev": null,
+   "newSentence": true,
+   "expected": "TẤT CẢ IN HOA"
+  },
+  {
+   "text": "à mình đi Hà Nội à",
+   "prev": "rồi",
+   "newSentence": false,
+   "expected": "mình đi Hà Nội à",
+   "note": "Python ra 'Hà nội' — bản Swift giữ hoa cạnh danh từ riêng"
+  },
+  {
+   "text": "ừm thì là vậy",
+   "prev": "xong",
+   "newSentence": false,
+   "expected": "thì là vậy"
+  },
+  {
+   "text": "xong rồi. tiếp theo là",
+   "prev": "ok",
+   "newSentence": false,
+   "expected": "xong rồi. Tiếp theo là"
+  },
+  {
+   "text": "mua iPhone mới",
+   "prev": "rồi",
+   "newSentence": false,
+   "expected": "mua iPhone mới"
+  },
+  {
+   "text": "có 3 người",
+   "prev": "à",
+   "newSentence": false,
+   "expected": "có 3 người"
+  },
+  {
+   "text": "Bạn biết không",
+   "prev": "Ăn cơm chưa?",
+   "newSentence": false,
+   "expected": "Bạn biết không"
+  },
+  {
+   "text": "dòng một Có\nDòng hai",
+   "prev": "x",
+   "newSentence": false,
+   "expected": "dòng một có\nDòng hai"
+  },
+  {
+   "text": "năm 2 nghìn",
+   "prev": "x",
+   "newSentence": false,
+   "expected": "năm 2 nghìn"
+  },
+  {
+   "text": "mình ở Việt Nam",
+   "prev": "rồi",
+   "newSentence": false,
+   "expected": "mình ở Việt Nam"
+  },
+  {
+   "text": "Người Ta nói",
+   "prev": null,
+   "newSentence": true,
+   "expected": "Người ta nói"
+  }
+ ],
+ "cues": [
+  {
+   "text": "xin chào Mọi người",
+   "start": 0,
+   "end": 1000000,
+   "expected": "Xin chào mọi người"
+  },
+  {
+   "text": "hôm nay Mình nói",
+   "start": 1100000,
+   "end": 2000000,
+   "expected": "hôm nay mình nói"
+  },
+  {
+   "text": "về chuyện tiền",
+   "start": 3000000,
+   "end": 4000000,
+   "expected": "Về chuyện tiền"
+  },
+  {
+   "text": "Mọi người biết đó",
+   "start": 4100000,
+   "end": 5000000,
+   "expected": "mọi người biết đó"
+  }
+ ]
+}
