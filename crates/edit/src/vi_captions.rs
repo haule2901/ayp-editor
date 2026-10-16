@@ -72,6 +72,12 @@ pub struct ViRules {
     pub filler_always: HashSet<String>,
     /// Dropped unless they end the phrase ("vậy à" is a real question).
     pub filler_non_final: HashSet<String>,
+    /// Break a caption longer than this many characters into two balanced lines (0 = never).
+    pub line_chars: usize,
+    /// Colour (`#rrggbb`) of numbers with their unit and of [`ViRules::keywords`]; None = none.
+    pub highlight: Option<String>,
+    /// Words or phrases to colour (lower case, matched whole).
+    pub keywords: Vec<String>,
 }
 
 fn set(words: &[&str]) -> HashSet<String> {
@@ -101,6 +107,9 @@ impl ViRules {
             common,
             filler_always: set(FILLER_ALWAYS),
             filler_non_final: set(FILLER_NON_FINAL),
+            line_chars: 18,
+            highlight: Some("#ffd200".into()),
+            keywords: Vec::new(),
         }
     }
 
@@ -290,6 +299,9 @@ pub fn vi_caption_blocks(words: &[SeqWord], r: &ViRules, base: &CaptionRules, ra
             s.2 = t;
         }
     }
+    for s in &mut spans {
+        s.2 = highlight(&break_lines(&s.2, r), r);
+    }
     let out = spans
         .into_iter()
         .map(|(start, end, text, range, speaker)| {
@@ -298,6 +310,99 @@ pub fn vi_caption_blocks(words: &[SeqWord], r: &ViRules, base: &CaptionRules, ra
         })
         .collect();
     place_blocks(out, base, rate)
+}
+
+/// Units that belong to the number before them ("4 triệu", "2 năm").
+const UNITS: &[&str] = &["triệu", "ngàn", "nghìn", "tỷ", "tỉ", "đồng", "k", "năm", "tháng", "tuần", "ngày", "tuổi", "lần", "giờ", "phút"];
+
+/// Break `text` into two lines when it is longer than `line_chars`: the split that balances the
+/// lines best, never after a word that leads into the next one ("của", "và", "là"…) and never
+/// inside a compound; after a comma or full stop is preferred.
+pub fn break_lines(text: &str, r: &ViRules) -> String {
+    let words: Vec<&str> = text.split(' ').filter(|w| !w.is_empty()).collect();
+    if r.line_chars == 0 || text.chars().count() <= r.line_chars || words.len() < 2 || text.contains('\n') {
+        return text.to_string();
+    }
+    let len = |ws: &[&str]| ws.iter().map(|w| w.chars().count()).sum::<usize>() + ws.len().saturating_sub(1);
+    let mut best: Option<(i64, usize)> = None;
+    for k in 1..words.len() {
+        let (a, b) = (words.get(..k).unwrap_or_default(), words.get(k..).unwrap_or_default());
+        let (Some(last), Some(first)) = (a.last(), b.first()) else { continue };
+        let mut score = (len(a) as i64 - len(b) as i64).abs();
+        if NO_END_WORDS.contains(&core(last).as_str()) {
+            score += 30;
+        }
+        if r.compounds.contains(&format!("{} {}", core(last), core(first))) {
+            score += 100;
+        }
+        if last.ends_with([',', '.', '!', '?', '…', ':', ';']) {
+            score -= 8;
+        }
+        if b.len() == 1 {
+            score += 12; // no orphan word on the second line
+        }
+        if best.is_none_or(|(s, _)| score < s) {
+            best = Some((score, k));
+        }
+    }
+    match best {
+        Some((_, k)) => format!("{}\n{}", words.get(..k).unwrap_or_default().join(" "), words.get(k..).unwrap_or_default().join(" ")),
+        None => text.to_string(),
+    }
+}
+
+/// Colour numbers with their unit ("4 triệu", "50%") and the rule's keywords with
+/// `<c #rrggbb>…</c>` (punctuation stays outside the colour). Each line on its own.
+pub fn highlight(text: &str, r: &ViRules) -> String {
+    let Some(colour) = r.highlight.as_deref() else { return text.to_string() };
+    let phrases: Vec<Vec<String>> =
+        r.keywords.iter().map(|k| k.split_whitespace().map(|w| w.to_lowercase()).collect::<Vec<_>>()).filter(|p| !p.is_empty()).collect();
+    text.split('\n')
+        .map(|line| {
+            let toks: Vec<Token> = line.split(' ').filter(|w| !w.is_empty()).map(split).collect();
+            let low: Vec<String> = toks.iter().map(|t| t.core.to_lowercase()).collect();
+            let mut mark = vec![false; toks.len()];
+            for (i, t) in toks.iter().enumerate() {
+                if t.core.chars().any(|c| c.is_ascii_digit()) {
+                    mark[i] = true;
+                    if t.suf.is_empty() && low.get(i + 1).is_some_and(|u| UNITS.contains(&u.as_str())) {
+                        mark[i + 1] = true;
+                    }
+                }
+            }
+            for p in &phrases {
+                for i in 0..toks.len() {
+                    if low.get(i..i + p.len()).is_some_and(|w| w == p.as_slice()) {
+                        mark.iter_mut().skip(i).take(p.len()).for_each(|m| *m = true);
+                    }
+                }
+            }
+            let mut out: Vec<String> = Vec::with_capacity(toks.len());
+            let mut i = 0;
+            while i < toks.len() {
+                let Some(t) = toks.get(i) else { break };
+                if !mark.get(i).copied().unwrap_or(false) || t.core.is_empty() {
+                    out.push(t.joined());
+                    i += 1;
+                    continue;
+                }
+                // a run of marked words with no punctuation between them shares one colour
+                let mut j = i;
+                while mark.get(j + 1).copied().unwrap_or(false)
+                    && toks.get(j).is_some_and(|x| x.suf.is_empty())
+                    && toks.get(j + 1).is_some_and(|x| x.pre.is_empty())
+                {
+                    j += 1;
+                }
+                let words: Vec<&str> = (i..=j).filter_map(|k| toks.get(k)).map(|x| x.core.as_str()).collect();
+                let suf = toks.get(j).map(|x| x.suf.as_str()).unwrap_or("");
+                out.push(format!("{}<c {colour}>{}</c>{suf}", t.pre, words.join(" ")));
+                i = j + 1;
+            }
+            out.join(" ")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[derive(Clone, Debug, Default)]

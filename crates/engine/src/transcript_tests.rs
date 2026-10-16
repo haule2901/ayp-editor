@@ -197,14 +197,18 @@ fn vietnamese_captions_replace_their_track_and_undo() {
     s.execute("transcript.set", json!({"item": item.0, "transcript": {"language": "vi", "speakers": [], "words": words}})).unwrap();
     s.execute("sequence.settings", json!({"width": 1080, "height": 1920})).unwrap();
 
-    let r = s.execute("transcript.createCaptionsVi", json!({"userRules": false})).unwrap();
+    let r = s.execute("transcript.createCaptionsVi", json!({"userRules": false, "keywords": ["thất nghiệp"]})).unwrap();
     assert_eq!(r["captions"], 1, "{r}");
     let q = s.active_sequence().unwrap();
     let ayp: Vec<_> = q.caption_tracks.iter().filter(|t| t.name == "Phụ đề AYP").collect();
     assert_eq!(ayp.len(), 1);
-    assert_eq!(ayp[0].captions[0].text, "Hôm nay người ta nói về thất nghiệp.", "fillers, capitals and numbers fixed");
-    assert_eq!((ayp[0].style.size, ayp[0].style.outline, ayp[0].style.background), (64.0, 3.0, false));
-    assert!((ayp[0].style.margin - 0.18).abs() < 1e-6, "above the phone UI on a vertical frame");
+    let c = &ayp[0].captions[0];
+    assert_eq!(c.plain_lines().join(" "), "Hôm nay người ta nói về thất nghiệp.", "fillers, capitals and numbers fixed");
+    assert_eq!(c.text.lines().count(), 2, "two balanced lines: {:?}", c.text);
+    assert!(c.text.contains("<c #ffd200>thất nghiệp</c>"), "keyword coloured: {:?}", c.text);
+    let st = &ayp[0].style;
+    assert_eq!((st.font.as_str(), st.size, st.outline, st.background), ("Be Vietnam Pro", 48.0, 3.0, false));
+    assert!((st.margin - 0.28).abs() < 1e-6, "the block sits about two thirds down a vertical frame");
     q.check().unwrap();
 
     s.execute("transcript.createCaptionsVi", json!({"maxWords": 4, "userRules": false})).unwrap();

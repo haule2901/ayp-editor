@@ -421,6 +421,9 @@ fn create_captions_vi(s: &mut Session, p: &Value) -> Result<Value> {
     if let Some(b) = bool_p(p, "polish") {
         rules.polish = b;
     }
+    if let Some(k) = p.get("keywords").and_then(Value::as_array) {
+        rules.keywords = k.iter().filter_map(Value::as_str).map(|w| w.trim().to_lowercase()).filter(|w| !w.is_empty()).take(200).collect();
+    }
     let blocks = vi_caption_blocks(&words, &rules, &CaptionRules::default(), s.sequence_rate());
     if blocks.is_empty() {
         return Err(bad("transcript.createCaptionsVi", "Không có câu nào để làm phụ đề"));
@@ -432,11 +435,13 @@ fn create_captions_vi(s: &mut Session, p: &Value) -> Result<Value> {
         let tid = TrackId(ctx.alloc());
         let mut t = CaptionTrack::new(tid, AYP_TRACK.to_string(), CaptionFormat::default());
         t.language = "vi".into();
+        // Be Vietnam Pro (falls back to Inter when not installed), the block about two thirds down
         t.style = CaptionStyle {
-            size: if portrait { 64.0 } else { 54.0 },
+            font: "Be Vietnam Pro".into(),
+            size: 48.0,
             background: false,
             outline: 3.0,
-            margin: if portrait { 0.18 } else { 0.08 },
+            margin: if portrait { 0.28 } else { 0.08 },
             ..CaptionStyle::default()
         };
         t.captions = tx::blocks_to_captions(&blocks, ctx);
@@ -539,7 +544,7 @@ pub fn commands() -> Vec<CommandSpec> {
             "transcript.createCaptionsVi",
             "Phụ đề tiếng Việt (AYP)…",
             &["Sequence", "Transcript"],
-            r#"{"maxWords":n?,"polish":bool?,"userRules":bool?}"#,
+            r#"{"maxWords":n?,"polish":bool?,"userRules":bool?,"keywords":[str]?}"#,
             has_transcript,
             create_captions_vi,
             true,

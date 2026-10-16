@@ -34,6 +34,8 @@ fn rules(max_words: usize, compounds: &[&str]) -> ViRules {
     let mut r = ViRules::standard();
     r.max_words = max_words;
     r.polish = false;
+    r.line_chars = 0; // these tests are about grouping words into captions
+    r.highlight = None;
     r.compounds = compounds.iter().map(|c| c.to_string()).collect();
     r
 }
@@ -164,4 +166,34 @@ fn captions_flow_over_stutter_cuts() {
     }
     w.extend(next);
     assert_eq!(texts(&w, &rules(8, &[])), ["Để mình trả nợ xong sớm"]);
+}
+
+/// AYP: two balanced lines broken where they read well (never after "của/và/là…", never
+/// inside a compound), and important words coloured.
+#[test]
+fn two_lines_break_where_they_read_well() {
+    let r = ViRules::standard();
+    let t = break_lines("Từ cái người mà hồi xưa mình làm freelance", &r);
+    let (a, b) = t.split_once('\n').unwrap();
+    assert!(!a.ends_with(" mà") && !a.ends_with(" của") && !a.ends_with(" là"), "{t}");
+    assert!((a.chars().count() as i64 - b.chars().count() as i64).abs() <= 14, "{t}");
+    // never inside a compound
+    let mut r2 = ViRules::standard();
+    r2.compounds.insert("thất nghiệp".into());
+    let t2 = break_lines("tỷ lệ người bị thất nghiệp tăng cao", &r2);
+    assert!(!t2.contains("thất\nnghiệp"), "{t2}");
+    // short text stays on one line
+    assert_eq!(break_lines("Xin chào bạn", &r), "Xin chào bạn");
+}
+
+#[test]
+fn numbers_and_keywords_are_coloured() {
+    let mut r = ViRules::standard();
+    r.keywords = vec!["lãi".into(), "im".into(), "tiết kiệm".into()];
+    assert_eq!(highlight("trả 4 triệu thì 2 triệu là lãi", &r), "trả <c #ffd200>4 triệu</c> thì <c #ffd200>2 triệu</c> là <c #ffd200>lãi</c>");
+    assert_eq!(highlight("hên là có IM, tiết kiệm được 50%", &r), "hên là có <c #ffd200>IM</c>, <c #ffd200>tiết kiệm</c> được <c #ffd200>50%</c>");
+    // not inside another word ("lãi" in "lãinh" is not a keyword hit)
+    assert_eq!(highlight("lãinh đạo", &r), "lãinh đạo");
+    r.highlight = None;
+    assert_eq!(highlight("trả 4 triệu", &r), "trả 4 triệu");
 }
