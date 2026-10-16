@@ -74,6 +74,9 @@ pub struct ViRules {
     pub filler_non_final: HashSet<String>,
     /// Break a caption longer than this many characters into two balanced lines (0 = never).
     pub line_chars: usize,
+    /// Most characters a line may have (what fits the frame width: about 21 at size 48 on a
+    /// vertical frame); longer phrases get more captions.
+    pub max_line_chars: usize,
     /// Colour (`#rrggbb`) of numbers with their unit and of [`ViRules::keywords`]; None = none.
     pub highlight: Option<String>,
     /// Words or phrases to colour (lower case, matched whole).
@@ -108,6 +111,7 @@ impl ViRules {
             filler_always: set(FILLER_ALWAYS),
             filler_non_final: set(FILLER_NON_FINAL),
             line_chars: 18,
+            max_line_chars: 21,
             highlight: Some("#ffd200".into()),
             keywords: Vec::new(),
         }
@@ -268,7 +272,14 @@ fn break_cost(a: &SeqWord, b: &SeqWord, r: &ViRules) -> i64 {
 /// places ([`break_cost`]). Dynamic programming over break positions.
 fn split_phrase(p: &[usize], words: &[SeqWord], r: &ViRules, max_words: usize) -> Vec<Vec<usize>> {
     let n = p.len();
-    if n <= max_words + 1 {
+    let chars = |g: &[usize]| g.iter().filter_map(|&i| words.get(i)).map(|w| w.text.chars().count() + 1).sum::<usize>().saturating_sub(1);
+    // two lines of at most max_line_chars, minus slack for a balanced break
+    let cap = if r.max_line_chars == 0 { usize::MAX } else { (2 * r.max_line_chars).saturating_sub(6).max(8) };
+    let total = chars(p);
+    if n <= max_words + 1 && total <= cap {
+        return vec![p.to_vec()];
+    }
+    if n < 2 {
         return vec![p.to_vec()];
     }
     // ponytail: a phrase with no pause for minutes (hostile input) is cut into blocks of
@@ -276,7 +287,7 @@ fn split_phrase(p: &[usize], words: &[SeqWord], r: &ViRules, max_words: usize) -
     if n > 6 * max_words {
         return p.chunks(4 * max_words).flat_map(|c| split_phrase(c, words, r, max_words)).collect();
     }
-    let k = n.div_ceil(max_words);
+    let k = n.div_ceil(max_words).max(total.div_ceil(cap)).min(n / 2).max(1);
     let ideal = n as f64 / k as f64;
     let (lo, hi) = (2usize, max_words + 1);
     // best[g][i]: cost of the first i words in g captions; from[g][i]: where caption g starts
@@ -298,6 +309,9 @@ fn split_phrase(p: &[usize], words: &[SeqWord], r: &ViRules, max_words: usize) -
                 }
                 let dev = size as f64 - ideal;
                 let mut c = prev + (dev * dev * 6.0) as i64;
+                if chars(p.get(j..i).unwrap_or_default()) > cap {
+                    c += 1000;
+                }
                 if i < n {
                     let (Some(a), Some(b)) = (p.get(i - 1).and_then(|&x| words.get(x)), p.get(i).and_then(|&x| words.get(x))) else { continue };
                     c += break_cost(a, b, r);
@@ -433,13 +447,16 @@ pub fn break_lines(text: &str, r: &ViRules) -> String {
             score += 30;
         }
         if unbreakable(last, first, r) {
-            score += 100;
+            score += 400; // worse than a line the renderer has to wrap
         }
         if last.ends_with([',', '.', '!', '?', '…', ':', ';']) {
             score -= 8;
         }
         if b.len() == 1 {
             score += 12; // no orphan word on the second line
+        }
+        if r.max_line_chars > 0 && (len(a) > r.max_line_chars || len(b) > r.max_line_chars) {
+            score += 300; // the renderer would wrap it again
         }
         if best.is_none_or(|(s, _)| score < s) {
             best = Some((score, k));

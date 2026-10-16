@@ -457,6 +457,14 @@ mod tests {
     }
 
     #[test]
+    fn a_whole_coloured_line_keeps_its_colour() {
+        let st = CaptionStyle { background: false, size: 120.0, ..Default::default() };
+        let o = render_caption(&cap("WWWW\n<c #ff0000>RRRR RRRR</c>"), &st, 1280, 720).unwrap();
+        let red = o.px.chunks(4).filter(|p| p[3] > 0.9 && p[0] > 0.5 && p[1] < 0.1).count();
+        assert!(red > 200, "red {red}");
+    }
+
+    #[test]
     fn coloured_words_are_drawn_in_their_colour() {
         let st = CaptionStyle { background: false, size: 120.0, ..Default::default() };
         let o = render_caption(&cap("<c #ff0000>RRRR</c> WWWW"), &st, 1280, 720).unwrap();

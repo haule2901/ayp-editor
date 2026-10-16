@@ -208,7 +208,7 @@ fn long_phrases_split_evenly_without_orphans() {
     assert!(t.iter().all(|c| c.split(' ').count() >= 4), "{t:?}");
     assert!(t.iter().any(|c| c.contains("8-10 triệu")), "{t:?}");
     // 9 words with max 8: one caption, not 8 + 1
-    assert_eq!(texts(&words("vừa cầm lương thì mình trả còn được khoảng", 0.0), &r).len(), 1);
+    assert_eq!(texts(&words("mình đã trả gần hết nợ cho bên đó", 0.0), &r).len(), 1);
     // a short pause inside the phrase is where it breaks
     let mut w = words("mình phát hiện ra bốn triệu tiền trả", 0.0);
     w.extend(words("thì có hai triệu là tiền lãi", 2.65));
@@ -234,4 +234,15 @@ fn keywords_and_number_words_are_never_split() {
     assert!(!t.contains("dao\nhai") && !t.contains("con\ndao") && !t.contains("hai\nlưỡi"), "{t}");
     let t = break_lines("mình bắt đầu có vài triệu để sống", &r);
     assert!(!t.contains("vài\ntriệu"), "{t}");
+}
+
+/// AYP: lines must fit the frame (about 21 characters at size 48 on a vertical frame).
+#[test]
+fn captions_fit_the_line_width() {
+    let mut r = rules(8, &[]);
+    r.line_chars = ViRules::standard().line_chars;
+    let t = texts(&words("Từ cái người mà hồi xưa mình làm freelance", 0.0), &r);
+    for c in &t {
+        assert!(c.lines().all(|l| l.chars().count() <= r.max_line_chars), "{t:?}");
+    }
 }
