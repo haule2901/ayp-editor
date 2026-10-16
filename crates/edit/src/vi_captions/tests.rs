@@ -223,3 +223,15 @@ fn line_breaks_keep_numbers_with_units() {
     let t = break_lines("máy phim là 8-10 triệu rồi mua phim,", &r);
     assert!(!t.contains("8-10\ntriệu"), "{t}");
 }
+
+#[test]
+fn keywords_and_number_words_are_never_split() {
+    let mut r = ViRules::standard();
+    r.keywords = vec!["đám cưới".into(), "con dao hai lưỡi".into()];
+    let t = break_lines("và cũng có kế hoạch cho một cái đám cưới", &r);
+    assert!(!t.contains("đám\ncưới"), "{t}");
+    let t = break_lines("thẻ tín dụng là cái như con dao hai lưỡi", &r);
+    assert!(!t.contains("dao\nhai") && !t.contains("con\ndao") && !t.contains("hai\nlưỡi"), "{t}");
+    let t = break_lines("mình bắt đầu có vài triệu để sống", &r);
+    assert!(!t.contains("vài\ntriệu"), "{t}");
+}

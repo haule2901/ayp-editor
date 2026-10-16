@@ -220,17 +220,32 @@ fn capitalize(s: &str) -> String {
     }
 }
 
+/// Spoken numbers that take a unit ("vài triệu", "hai năm").
+const NUMBER_WORDS: &[&str] = &["vài", "mấy", "một", "hai", "ba", "bốn", "sáu", "bảy", "tám", "chín", "mười", "trăm"];
+
 fn is_number_unit(a: &str, b: &str) -> bool {
-    core(a).chars().any(|c| c.is_ascii_digit()) && UNITS.contains(&core(b).as_str())
+    let ca = core(a);
+    (ca.chars().any(|c| c.is_ascii_digit()) || NUMBER_WORDS.contains(&ca.as_str())) && UNITS.contains(&core(b).as_str())
+}
+
+/// `a b` must stay together: a compound, a number and its unit, or inside a keyword phrase.
+fn unbreakable(a: &str, b: &str, r: &ViRules) -> bool {
+    let pair = format!("{} {}", core(a), core(b));
+    r.compounds.contains(&pair)
+        || is_number_unit(a, b)
+        || r.keywords.iter().any(|k| {
+            let ws: Vec<&str> = k.split_whitespace().collect();
+            ws.windows(2).any(|w| w.first().zip(w.get(1)).is_some_and(|(x, y)| format!("{x} {y}") == pair))
+        })
 }
 
 /// How bad a break between `a` and `b` is (negative = a good place): never inside a compound or
 /// between a number and its unit, not after a word that leads into the next, best at
 /// punctuation, a pause or a cut.
 fn break_cost(a: &SeqWord, b: &SeqWord, r: &ViRules) -> i64 {
-    let (ca, cb) = (core(&a.text), core(&b.text));
+    let ca = core(&a.text);
     let mut c = 0;
-    if r.compounds.contains(&format!("{ca} {cb}")) || is_number_unit(&a.text, &b.text) {
+    if unbreakable(&a.text, &b.text, r) {
         c += 200;
     }
     if NO_END_WORDS.contains(&ca.as_str()) {
@@ -417,7 +432,7 @@ pub fn break_lines(text: &str, r: &ViRules) -> String {
         if NO_END_WORDS.contains(&core(last).as_str()) {
             score += 30;
         }
-        if r.compounds.contains(&format!("{} {}", core(last), core(first))) || is_number_unit(last, first) {
+        if unbreakable(last, first, r) {
             score += 100;
         }
         if last.ends_with([',', '.', '!', '?', '…', ':', ';']) {
