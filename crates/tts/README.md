@@ -81,3 +81,15 @@ Model-dependent tests run when `FILMCRAFT_KOKORO_DIR` names a downloaded package
   X. Wang et al., "Neural source-filter waveform models" (2019); L. Ziyin et al., "Neural Networks
   Fail to Learn Periodic Functions and How to Fix It" (Snake, NeurIPS 2020). Weights: hexgrad,
   Kokoro-82M, Apache-2.0.
+
+## AYP: Vietnamese voices (VieNeu-TTS)
+
+Feature `vieneu` (engine `vieneu-voices`, app `vieneu-voices`) adds the 25 preset voices of
+[VieNeu-TTS](https://github.com/pnnbao97/VieNeu-TTS) v3 Turbo (Apache-2.0 code and weights)
+under the language `vi-VN`. VieNeu is not linked: it runs as its own local process, the
+project's OpenAI-compatible server on ONNX Runtime (CPU), installed once with
+`git clone --depth 1 https://github.com/pnnbao97/VieNeu-TTS && uv sync` in
+`<data dir>/vieneu/VieNeu-TTS`. A voice starts the server on `127.0.0.1:8891` when it is not
+running (first start downloads the ONNX models from Hugging Face; later starts load in ~20 s)
+and leaves it running. Pace is a resample with the pitch change compensated; VieNeu's own
+watermark setting is left at its default. Measured on an M4: 4.4 s of speech in 3.7 s.
