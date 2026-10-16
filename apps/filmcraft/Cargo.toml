@@ -16,6 +16,8 @@ default = []
 whisper = ["filmcraft-engine/whisper", "filmcraft-engine/speech-download"]
 # Natural Text to Speech voices (Kokoro-82M on the CPU, downloaded on first use).
 neural-voices = ["filmcraft-engine/neural-voices"]
+# AYP: Vietnamese voices from a local VieNeu-TTS install.
+vieneu-voices = ["filmcraft-engine/vieneu-voices"]
 
 [dependencies]
 filmcraft-engine = { workspace = true }

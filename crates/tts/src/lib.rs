@@ -16,6 +16,7 @@ pub mod kokoro;
 #[cfg(feature = "kokoro")]
 pub mod neural;
 pub mod script;
+pub mod vieneu;
 
 use serde::Serialize;
 
@@ -122,14 +123,21 @@ pub trait Voice: Send + Sync {
     fn synthesize(&self, text: &str, params: &Params) -> Result<Audio, TtsError>;
 }
 
-/// Languages offered (English only for now).
-pub const LANGUAGES: &[(&str, &str)] = &[("en-US", "English (United States)")];
+/// Languages offered. AYP: Vietnamese (VieNeu-TTS voices).
+pub const LANGUAGES: &[(&str, &str)] = &[("en-US", "English (United States)"), ("vi-VN", "Tiếng Việt")];
 
 /// Every voice FilmCraft knows: the built-in voices, then the neural voices (installed when their
 /// package is downloaded into `models_dir`).
 pub fn voices_in(models_dir: Option<&std::path::Path>) -> Vec<VoiceInfo> {
     let installed = models_dir.is_some_and(catalog::installed) && cfg!(feature = "kokoro");
-    formant::VOICES.iter().map(|v| v.info).chain(catalog::VOICES.iter().map(|v| VoiceInfo { installed, ..v.info })).collect()
+    // AYP: VieNeu voices are usable once VieNeu is installed next to the models (feature `vieneu`)
+    let vieneu = models_dir.is_some_and(vieneu::installed) && cfg!(feature = "vieneu");
+    formant::VOICES
+        .iter()
+        .map(|v| v.info)
+        .chain(catalog::VOICES.iter().map(|v| VoiceInfo { installed, ..v.info }))
+        .chain(vieneu::VOICES.iter().map(|v| VoiceInfo { installed: vieneu, ..v.info }))
+        .collect()
 }
 
 /// The built-in voices (always available).
@@ -148,6 +156,17 @@ pub fn voice(id: &str) -> Result<Box<dyn Voice>, TtsError> {
 
 /// The voice `id`: built in, or (feature `kokoro`) a neural voice from the package in `models_dir`.
 pub fn voice_in(id: &str, models_dir: Option<&std::path::Path>) -> Result<Box<dyn Voice>, TtsError> {
+    if vieneu::find(id).is_some() {
+        #[cfg(feature = "vieneu")]
+        {
+            let dir = models_dir.ok_or_else(|| TtsError::Model("VieNeu-TTS chưa cài (không có thư mục dữ liệu)".into()))?;
+            return vieneu::load(id, dir).map(|v| Box::new(v) as Box<dyn Voice>);
+        }
+        #[cfg(not(feature = "vieneu"))]
+        {
+            return Err(TtsError::Model("bản build này không có giọng VieNeu (feature `vieneu`)".into()));
+        }
+    }
     if catalog::find(id).is_some() {
         #[cfg(feature = "kokoro")]
         {
@@ -170,6 +189,11 @@ pub fn default_voice_id() -> &'static str {
 
 /// The sentence "Hear this voice" plays.
 pub const SAMPLE_SENTENCE: &str = "Hello! This is how I sound when I read your script.";
+
+/// AYP: "Hear this voice" in the voice's language.
+pub fn sample_sentence_for(voice_id: &str) -> &'static str {
+    if vieneu::find(voice_id).is_some() { "Xin chào! Đây là giọng tiếng Việt sẽ đọc kịch bản của bạn." } else { SAMPLE_SENTENCE }
+}
 
 /// Validate a script before synthesis: length, and that it says something.
 pub fn check_text(text: &str) -> Result<(), TtsError> {
@@ -197,6 +221,20 @@ mod tests {
         }
         assert_eq!(voice("nope").err(), Some(TtsError::UnknownVoice("nope".into())));
         assert!(voice(default_voice_id()).is_ok());
+    }
+
+    /// AYP: Vietnamese voices from VieNeu-TTS are listed and routed.
+    #[test]
+    fn vietnamese_voices_are_listed_and_routed() {
+        assert!(LANGUAGES.iter().any(|(id, _)| *id == "vi-VN"));
+        let all = voices_in(None);
+        let vi: Vec<_> = all.iter().filter(|v| v.language == "vi-VN").collect();
+        assert_eq!(vi.len(), vieneu::VOICES.len());
+        assert!(vi.iter().all(|v| v.engine == "vieneu" && !v.installed));
+        // not installed (no data dir) → a clear error, never the built-in voice
+        assert!(voice_in("vieneu-mai-anh", None).is_err());
+        assert!(sample_sentence_for("vieneu-mai-anh").contains("tiếng Việt"));
+        assert_eq!(sample_sentence_for("basic-female"), SAMPLE_SENTENCE);
     }
 
     #[test]

@@ -256,7 +256,11 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
         label(ui, &t, "Voice");
         let voice_name = voices.iter().find(|v| v.id == d.voice).map_or(d.voice.as_str(), |v| v.name);
         let cb = egui::ComboBox::from_id_salt("tts-voice").selected_text(voice_name).width(w).show_ui(ui, |ui| {
-            for (engine, heading) in [("neural", "Natural voices"), ("basic", "Basic voices (built in)")] {
+            for (engine, heading) in [("neural", "Natural voices"), ("vieneu", "Giọng tiếng Việt (VieNeu)"), ("basic", "Basic voices (built in)")] {
+                // AYP: only the groups that have voices in this language (VieNeu is Vietnamese only)
+                if !voices.iter().any(|v| v.language == d.language && v.engine == engine) {
+                    continue;
+                }
                 ui.label(egui::RichText::new(heading).color(t.text_faint).size(11.0));
                 for v in voices.iter().filter(|v| v.language == d.language && v.engine == engine) {
                     let label = if v.engine == "neural" && !v.installed { format!("{} (download)", v.name) } else { v.name.to_string() };

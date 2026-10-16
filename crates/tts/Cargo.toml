@@ -12,6 +12,8 @@ workspace = true
 [features]
 default = []
 # Kokoro-82M neural voices on the CPU via candle (pure Rust). Off by default and in wasm builds.
+# AYP: Vietnamese voices from VieNeu-TTS v3 Turbo, served by its local OpenAI-compatible server.
+vieneu = ["dep:ureq", "dep:serde_json", "dep:filmcraft-audio-dsp"]
 kokoro = ["dep:candle-core", "dep:candle-nn", "dep:zip", "dep:serde_json", "dep:filmcraft-tts-text", "dep:filmcraft-audio-dsp"]
 
 [dependencies]
@@ -23,6 +25,10 @@ candle-core = { version = "0.9", default-features = false, optional = true }
 candle-nn = { version = "0.9", default-features = false, optional = true }
 zip = { version = "7", default-features = false, optional = true }
 serde_json = { workspace = true, optional = true }
+ureq = { version = "3", default-features = false, optional = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
 
 [[example]]
 name = "kokoro_say"
