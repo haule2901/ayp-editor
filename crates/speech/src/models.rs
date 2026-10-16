@@ -177,6 +177,47 @@ static CATALOGUE: &[ModelInfo] = &[
             ),
         ],
     },
+    // AYP: the large model that transcribes Vietnamese well (and every other Whisper language).
+    ModelInfo {
+        id: "whisper-large-v3-turbo",
+        name: "Whisper large-v3-turbo (multilingual, best for Vietnamese)",
+        multilingual: true,
+        description: "809 M parameters. Much better on Vietnamese and accents; slower than small.",
+        license: LICENSE,
+        license_url: LICENSE_URL,
+        author: AUTHOR,
+        source: "https://huggingface.co/openai/whisper-large-v3-turbo",
+        files: &[
+            hf!(
+                "whisper-large-v3-turbo",
+                "41f01f3fe87f28c78e2fbf8b568835947dd65ed9",
+                "config.json",
+                "c5b526b3e3cd64cd8940dabb45e8ba726629e22d8ed389c29b552f9140daf04a",
+                1256
+            ),
+            hf!(
+                "whisper-large-v3-turbo",
+                "41f01f3fe87f28c78e2fbf8b568835947dd65ed9",
+                "generation_config.json",
+                "cce11bfe3aaa6ae9e072ea2637caaec8795e68d9b67e655a5af16ee509681a4c",
+                3772
+            ),
+            hf!(
+                "whisper-large-v3-turbo",
+                "41f01f3fe87f28c78e2fbf8b568835947dd65ed9",
+                "tokenizer.json",
+                "297b13372ac43916285644fb9687add3cc62ee2a1adb60da3dc25cc94c1871fd",
+                2710337
+            ),
+            hf!(
+                "whisper-large-v3-turbo",
+                "41f01f3fe87f28c78e2fbf8b568835947dd65ed9",
+                "model.safetensors",
+                "542566a422ae4f3fd23f1ba11add198fca01bbf82e66e6a2857b3f608b1eb9d1",
+                1617824864
+            ),
+        ],
+    },
 ];
 
 /// The default model.
@@ -307,11 +348,19 @@ mod tests {
                 assert!(f.url.contains("/resolve/") && f.url.ends_with(f.name));
                 assert_eq!(f.sha256.len(), 64);
                 assert!(f.sha256.bytes().all(|b| b.is_ascii_hexdigit()));
-                if f.name == "tokenizer.json" {
+                // large-v3 models ship their own tokenizer (one more language, new timestamps)
+                if f.name == "tokenizer.json" && !m.id.contains("large-v3") {
                     assert_eq!(f.sha256, shared_tokenizer_sha());
                 }
             }
         }
+    }
+
+    #[test]
+    fn large_v3_turbo_is_listed_for_vietnamese() {
+        let m = find("whisper-large-v3-turbo").expect("AYP: large-v3-turbo in the catalogue");
+        assert!(m.multilingual);
+        assert_eq!(m.size(), 1256 + 3772 + 2_710_337 + 1_617_824_864);
     }
 
     #[test]
