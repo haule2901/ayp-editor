@@ -10,7 +10,7 @@ use filmcraft_color::srgb_to_linear;
 use filmcraft_project::{Caption, CaptionAlign, CaptionAnchor, CaptionStyle, CaptionTrack, Sequence};
 use filmcraft_time::Tick;
 
-use filmcraft_text::{ParagraphStyle, TextStyle, layout, render};
+use filmcraft_text::{ParagraphStyle, StyleRun, TextStyle, layout, layout_rich, render};
 
 /// A rendered caption: premultiplied linear-light RGBA f32 pixels at `(x, y)` in the frame.
 #[derive(Clone, Debug, PartialEq)]
@@ -60,21 +60,86 @@ fn lin(c: [u8; 4]) -> [f32; 4] {
     [srgb_to_linear(c[0] as f32 / 255.0) * a, srgb_to_linear(c[1] as f32 / 255.0) * a, srgb_to_linear(c[2] as f32 / 255.0) * a, a]
 }
 
-/// Word-wrap one line to `max_w` pixels.
-fn wrap(line: &str, ts: &TextStyle, max_w: f32) -> Vec<String> {
+/// Word-wrap one line to `max_w` pixels: byte ranges of `line`, split at spaces.
+fn wrap(line: &str, ts: &TextStyle, max_w: f32) -> Vec<std::ops::Range<usize>> {
     let mut out = Vec::new();
-    let mut cur = String::new();
+    let (mut start, mut end) = (0usize, 0usize);
+    let mut pos = 0usize;
     for word in line.split(' ') {
-        let cand = if cur.is_empty() { word.to_string() } else { format!("{cur} {word}") };
-        if !cur.is_empty() && filmcraft_text::measure(&cand, ts) > max_w {
-            out.push(std::mem::take(&mut cur));
-            cur = word.to_string();
+        let (ws, we) = (pos, pos + word.len());
+        pos = we + 1;
+        if end == start && start == ws {
+            end = we;
+            continue;
+        }
+        let cand = line.get(start..we).unwrap_or("");
+        if filmcraft_text::measure(cand, ts) > max_w {
+            out.push(start..end);
+            start = ws;
+        }
+        end = we;
+    }
+    out.push(start..end.min(line.len()));
+    out
+}
+
+fn hex_colour(s: &str) -> Option<[u8; 4]> {
+    let h = s.trim().strip_prefix('#')?;
+    let byte = |i: usize| h.get(i..i + 2).and_then(|b| u8::from_str_radix(b, 16).ok());
+    match h.len() {
+        6 => Some([byte(0)?, byte(2)?, byte(4)?, 255]),
+        8 => Some([byte(0)?, byte(2)?, byte(4)?, byte(6)?]),
+        _ => None,
+    }
+}
+
+/// AYP: split a caption line into its drawn text (markup removed, entities decoded) and the byte
+/// ranges coloured by `<c #rrggbb>…</c>`. A span left open continues on the next line (`open`);
+/// `<c>` without a valid colour colours nothing. Other markup is dropped as before.
+pub fn colour_spans(line: &str, open: &mut Option<[u8; 4]>) -> (String, Vec<(std::ops::Range<usize>, [u8; 4])>) {
+    let mut segs: Vec<(String, Option<[u8; 4]>)> = vec![(String::new(), *open)];
+    let mut rest = line;
+    while let Some(i) = rest.find('<') {
+        let (text, tail) = rest.split_at(i);
+        if let Some(last) = segs.last_mut() {
+            last.0.push_str(text);
+        }
+        let Some(j) = tail.find('>') else {
+            if let Some(last) = segs.last_mut() {
+                last.0.push_str(tail);
+            }
+            rest = "";
+            break;
+        };
+        let tag = tail.get(1..j).unwrap_or("").trim();
+        if tag.eq_ignore_ascii_case("/c") {
+            *open = None;
+            segs.push((String::new(), None));
+        } else if tag == "c" || tag.starts_with("c ") || tag.starts_with("c#") {
+            *open = hex_colour(tag.get(1..).unwrap_or(""));
+            segs.push((String::new(), *open));
         } else {
-            cur = cand;
+            // any other tag (<i>, <b>…) is left to plain_text below
+            if let Some(last) = segs.last_mut() {
+                last.0.push_str(tail.get(..=j).unwrap_or(""));
+            }
+        }
+        rest = tail.get(j + 1..).unwrap_or("");
+    }
+    if let Some(last) = segs.last_mut() {
+        last.0.push_str(rest);
+    }
+    let mut plain = String::new();
+    let mut spans = Vec::new();
+    for (text, colour) in segs {
+        let t = filmcraft_project::caption::plain_text(&text);
+        let a = plain.len();
+        plain.push_str(&t);
+        if let (Some(c), true) = (colour, plain.len() > a) {
+            spans.push((a..plain.len(), c));
         }
     }
-    out.push(cur);
-    out
+    (plain, spans)
 }
 
 /// Placement overrides from WebVTT cue settings.
@@ -113,12 +178,32 @@ pub fn render_caption(c: &Caption, style: &CaptionStyle, w: usize, h: usize) -> 
     let px = (style.size * scale).max(4.0);
     let max_w = w as f32 * 0.9;
     let ts = caption_style(&style.font, px);
-    let mut lines: Vec<String> = Vec::new();
     // (speaker names are metadata; like Premiere, they are not burned in)
-    for l in c.plain_lines() {
-        lines.extend(wrap(l.trim(), &ts, max_w));
+    // AYP: each line keeps its `<c #rrggbb>` colour spans through wrapping.
+    let mut lines: Vec<String> = Vec::new();
+    let mut line_spans: Vec<Vec<(std::ops::Range<usize>, [u8; 4])>> = Vec::new();
+    let mut open = None;
+    for raw in c.text.lines() {
+        let (plain, spans) = colour_spans(raw, &mut open);
+        let lead = plain.len() - plain.trim_start().len();
+        let trimmed = plain.trim();
+        for r in wrap(trimmed, &ts, max_w) {
+            let (a, b) = (r.start + lead, r.end + lead);
+            let Some(text) = plain.get(a..b) else { continue };
+            if text.trim().is_empty() {
+                continue;
+            }
+            let sp = spans
+                .iter()
+                .filter_map(|(s, col)| {
+                    let (x, y) = (s.start.max(a), s.end.min(b));
+                    (x < y).then(|| ((x - a)..(y - a), *col))
+                })
+                .collect();
+            lines.push(text.to_string());
+            line_spans.push(sp);
+        }
     }
-    lines.retain(|l| !l.is_empty());
     if lines.is_empty() {
         return None;
     }
@@ -158,6 +243,7 @@ pub fn render_caption(c: &Caption, style: &CaptionStyle, w: usize, h: usize) -> 
     let ow = (bx1 - bx0).max(1.0) as usize;
     let oh = (by1 - by0).max(1.0) as usize;
     let mut cover = vec![0.0f32; ow * oh];
+    let mut coloured: Vec<([u8; 4], Vec<f32>)> = Vec::new();
     let mut bg = vec![0.0f32; ow * oh];
     for (i, line) in lines.iter().enumerate() {
         let lt = top + lh * i as f32;
@@ -174,12 +260,38 @@ pub fn render_caption(c: &Caption, style: &CaptionStyle, w: usize, h: usize) -> 
             }
         }
         let baseline = lt + (lh - (asc + desc)) / 2.0 + asc;
-        let l = layout(line, &ts, &ParagraphStyle::default());
-        let mut m = filmcraft_text::Mask { w: ow, h: oh, a: std::mem::take(&mut cover) };
-        render::draw(&l, &render::at(xs[i], baseline.round()), &mut m, (ox, oy));
-        cover = m.a;
+        let at = render::at(xs[i], baseline.round());
+        let spans = line_spans.get(i).map(Vec::as_slice).unwrap_or(&[]);
+        if spans.is_empty() {
+            let l = layout(line, &ts, &ParagraphStyle::default());
+            let mut m = filmcraft_text::Mask { w: ow, h: oh, a: std::mem::take(&mut cover) };
+            render::draw(&l, &at, &mut m, (ox, oy));
+            cover = m.a;
+        } else {
+            let runs: Vec<StyleRun> = spans.iter().map(|(r, _)| StyleRun { range: r.clone(), style: ts.clone() }).collect();
+            let l = layout_rich(line, &ts, &runs, &ParagraphStyle::default());
+            let mut m = filmcraft_text::Mask { w: ow, h: oh, a: std::mem::take(&mut cover) };
+            render::draw_run(&l, &at, &mut m, (ox, oy), Some(0));
+            cover = m.a;
+            for (k, (_, col)) in spans.iter().enumerate() {
+                let idx = match coloured.iter().position(|(c, _)| c == col) {
+                    Some(p) => p,
+                    None => {
+                        coloured.push((*col, vec![0.0; ow * oh]));
+                        coloured.len() - 1
+                    }
+                };
+                let Some((_, mask)) = coloured.get_mut(idx) else { continue };
+                let mut m = filmcraft_text::Mask { w: ow, h: oh, a: std::mem::take(mask) };
+                render::draw_run(&l, &at, &mut m, (ox, oy), u16::try_from(k + 1).ok());
+                *mask = m.a;
+            }
+        }
     }
-    let stroke = if outline > 0.0 { dilate(&cover, ow, oh, outline) } else { Vec::new() };
+    // the outline goes around every glyph, coloured or not
+    let union: Vec<f32> =
+        if coloured.is_empty() { Vec::new() } else { (0..ow * oh).map(|j| coloured.iter().fold(cover[j], |a, (_, m)| a.max(m[j]))).collect() };
+    let stroke = if outline > 0.0 { dilate(if union.is_empty() { &cover } else { &union }, ow, oh, outline) } else { Vec::new() };
     let (tc, bc, oc) = (lin(style.color), lin(style.background_color), lin(style.outline_color));
     let mut out = vec![0.0f32; ow * oh * 4];
     for j in 0..ow * oh {
@@ -196,6 +308,9 @@ pub fn render_caption(c: &Caption, style: &CaptionStyle, w: usize, h: usize) -> 
             over(&mut p, oc, stroke[j]);
         }
         over(&mut p, tc, cover[j]);
+        for (col, m) in &coloured {
+            over(&mut p, lin(*col), m[j]);
+        }
         out[j * 4..j * 4 + 4].copy_from_slice(&p);
     }
     Some(Overlay { x: ox, y: oy, w: ow, h: oh, px: out })
@@ -322,6 +437,41 @@ mod tests {
             let st = CaptionStyle { font: font.into(), ..Default::default() };
             assert_eq!(render_caption(&cap("Hello"), &st, 1280, 720), Some(inter.clone()), "font {font:?}");
         }
+    }
+
+    /// AYP: `<c #rrggbb>…</c>` colours words (keywords) inside a caption.
+    #[test]
+    fn colour_spans_parse_and_carry_over_lines() {
+        let mut open = None;
+        let (plain, spans) = colour_spans("Mình nợ <c #ffd200>10 triệu</c> rồi", &mut open);
+        assert_eq!(plain, "Mình nợ 10 triệu rồi");
+        assert_eq!(spans, vec![(plain.find("10").unwrap()..plain.find(" rồi").unwrap(), [0xff, 0xd2, 0x00, 0xff])]);
+        assert!(open.is_none());
+        let (p1, s1) = colour_spans("a <c #ff0000>b", &mut open);
+        let (p2, s2) = colour_spans("c</c> d <i>e</i>", &mut open);
+        assert_eq!((p1.as_str(), s1), ("a b", vec![(2..3, [255, 0, 0, 255])]));
+        assert_eq!((p2.as_str(), s2), ("c d e", vec![(0..1, [255, 0, 0, 255])]));
+        // a malformed colour falls back to the track colour (no span), never a panic
+        let (p3, s3) = colour_spans("<c #zz>x</c> <c>y</c>", &mut None);
+        assert_eq!((p3.as_str(), s3.len()), ("x y", 0));
+    }
+
+    #[test]
+    fn coloured_words_are_drawn_in_their_colour() {
+        let st = CaptionStyle { background: false, size: 120.0, ..Default::default() };
+        let o = render_caption(&cap("<c #ff0000>RRRR</c> WWWW"), &st, 1280, 720).unwrap();
+        let (mut red, mut white) = (0, 0);
+        for p in o.px.chunks(4) {
+            if p[3] > 0.9 {
+                if p[0] > 0.5 && p[1] < 0.1 {
+                    red += 1
+                }
+                if p[0] > 0.5 && p[1] > 0.5 && p[2] > 0.5 {
+                    white += 1
+                }
+            }
+        }
+        assert!(red > 200 && white > 200, "red {red} white {white}");
     }
 
     #[test]
