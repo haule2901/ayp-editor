@@ -33,6 +33,7 @@ the control channel and MCP agents can do the same.
 | `transcript.removeFillers` | Ripple-delete filler words (`fillers`, default um/uh/erm/…; phrases such as "you know" allowed). |
 | `transcript.removePauses` | Ripple-delete pauses longer than `minSeconds`, keeping `keepSeconds` of air on both sides. |
 | `transcript.createCaptions` | Lay the words out as captions on a new caption track (`maxChars`, `lines`, `minSeconds`, `maxSeconds`, `gapFrames`). |
+| `transcript.createCaptionsVi` | AYP: *Phụ đề tiếng Việt (AYP)…* — Vietnamese captions on a track named "Phụ đề AYP" (replaced on every run): lines of `maxWords` words (8) that keep two-syllable compounds whole, fillers and Whisper hallucinations dropped, ASR clean-up (`polish`, on by default: numbers, stray capitals, sentence capitals) tuned by `~/.capcut-sub/` word lists (`userRules: false` ignores them); white text with a black outline, raised to 18 % on a vertical frame. Transcribe with *Whisper large-v3-turbo* first for good Vietnamese. |
 | `transcript.models` / `transcript.downloadModel` | List the speech models (size, licence, installed) / download one. |
 
 ## Speech recognition

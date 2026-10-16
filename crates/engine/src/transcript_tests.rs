@@ -179,3 +179,42 @@ fn generate_without_a_transcriber() {
     let r = s.execute("transcript.generate", json!({})).unwrap();
     assert!(r["items"].as_array().unwrap().len() >= 2, "{r}");
 }
+
+/// AYP: "Phụ đề tiếng Việt (AYP)…" — Vietnamese captions with the AYP track style.
+#[test]
+fn vietnamese_captions_replace_their_track_and_undo() {
+    let (mut s, item, _) = session();
+    let q = s.active_sequence().unwrap();
+    let sin = q.audio_tracks[0].items[0].source_in;
+    assert!(s.execute("transcript.createCaptionsVi", json!({})).is_err(), "disabled without a transcript");
+
+    let sec = |x: f64| (sin + Tick::from_seconds_f64(x)).0;
+    let words: Vec<_> = ["ừm", "hôm", "nay", "Người", "ta", "nói", "về", "7", "nghiệp."]
+        .iter()
+        .enumerate()
+        .map(|(i, w)| json!({"text": w, "start": sec(0.2 + i as f64 * 0.3), "end": sec(0.45 + i as f64 * 0.3)}))
+        .collect();
+    s.execute("transcript.set", json!({"item": item.0, "transcript": {"language": "vi", "speakers": [], "words": words}})).unwrap();
+    s.execute("sequence.settings", json!({"width": 1080, "height": 1920})).unwrap();
+
+    let r = s.execute("transcript.createCaptionsVi", json!({"userRules": false})).unwrap();
+    assert_eq!(r["captions"], 1, "{r}");
+    let q = s.active_sequence().unwrap();
+    let ayp: Vec<_> = q.caption_tracks.iter().filter(|t| t.name == "Phụ đề AYP").collect();
+    assert_eq!(ayp.len(), 1);
+    assert_eq!(ayp[0].captions[0].text, "Hôm nay người ta nói về thất nghiệp.", "fillers, capitals and numbers fixed");
+    assert_eq!((ayp[0].style.size, ayp[0].style.outline, ayp[0].style.background), (64.0, 3.0, false));
+    assert!((ayp[0].style.margin - 0.18).abs() < 1e-6, "above the phone UI on a vertical frame");
+    q.check().unwrap();
+
+    s.execute("transcript.createCaptionsVi", json!({"maxWords": 4, "userRules": false})).unwrap();
+    let q = s.active_sequence().unwrap();
+    assert_eq!(q.caption_tracks.iter().filter(|t| t.name == "Phụ đề AYP").count(), 1, "replaced, not stacked");
+    assert!(q.caption_tracks[0].captions.len() >= 2);
+
+    s.execute("edit.undo", json!({})).unwrap();
+    s.execute("edit.undo", json!({})).unwrap();
+    assert!(s.active_sequence().unwrap().caption_tracks.iter().all(|t| t.name != "Phụ đề AYP"));
+    s.execute("edit.redo", json!({})).unwrap();
+    assert_eq!(s.active_sequence().unwrap().caption_tracks.iter().filter(|t| t.name == "Phụ đề AYP").count(), 1);
+}
