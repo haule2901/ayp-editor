@@ -51,7 +51,8 @@ fn compound_list_loads() {
 
 #[test]
 fn splits_by_max_words_without_breaking_compounds() {
-    assert_eq!(texts(&words("tôi muốn nói về thất nghiệp hôm nay", 0.0), &rules(5, &["thất nghiệp"])), ["Tôi muốn nói về", "thất nghiệp hôm nay"]);
+    // balanced, and "về" stays with what it introduces
+    assert_eq!(texts(&words("tôi muốn nói về thất nghiệp hôm nay", 0.0), &rules(5, &["thất nghiệp"])), ["Tôi muốn nói", "về thất nghiệp hôm nay"]);
 }
 
 #[test]
@@ -196,4 +197,29 @@ fn numbers_and_keywords_are_coloured() {
     assert_eq!(highlight("lãinh đạo", &r), "lãinh đạo");
     r.highlight = None;
     assert_eq!(highlight("trả 4 triệu", &r), "trả 4 triệu");
+}
+
+/// AYP: a long phrase is split into balanced captions — no one-word leftovers, a number stays
+/// with its unit, and a pause is the preferred place to break.
+#[test]
+fn long_phrases_split_evenly_without_orphans() {
+    let r = rules(8, &[]);
+    let t = texts(&words("ngoài ra còn có máy phim thì máy phim là 8-10 triệu rồi mua phim mua đồ tráng", 0.0), &r);
+    assert!(t.iter().all(|c| c.split(' ').count() >= 4), "{t:?}");
+    assert!(t.iter().any(|c| c.contains("8-10 triệu")), "{t:?}");
+    // 9 words with max 8: one caption, not 8 + 1
+    assert_eq!(texts(&words("vừa cầm lương thì mình trả còn được khoảng", 0.0), &r).len(), 1);
+    // a short pause inside the phrase is where it breaks
+    let mut w = words("mình phát hiện ra bốn triệu tiền trả", 0.0);
+    w.extend(words("thì có hai triệu là tiền lãi", 2.65));
+    let t = texts(&w, &r);
+    assert_eq!(t.len(), 2, "{t:?}");
+    assert!(t[0].ends_with("tiền trả"), "{t:?}");
+}
+
+#[test]
+fn line_breaks_keep_numbers_with_units() {
+    let r = ViRules::standard();
+    let t = break_lines("máy phim là 8-10 triệu rồi mua phim,", &r);
+    assert!(!t.contains("8-10\ntriệu"), "{t}");
 }

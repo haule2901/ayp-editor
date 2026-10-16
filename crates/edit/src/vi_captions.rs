@@ -220,6 +220,97 @@ fn capitalize(s: &str) -> String {
     }
 }
 
+fn is_number_unit(a: &str, b: &str) -> bool {
+    core(a).chars().any(|c| c.is_ascii_digit()) && UNITS.contains(&core(b).as_str())
+}
+
+/// How bad a break between `a` and `b` is (negative = a good place): never inside a compound or
+/// between a number and its unit, not after a word that leads into the next, best at
+/// punctuation, a pause or a cut.
+fn break_cost(a: &SeqWord, b: &SeqWord, r: &ViRules) -> i64 {
+    let (ca, cb) = (core(&a.text), core(&b.text));
+    let mut c = 0;
+    if r.compounds.contains(&format!("{ca} {cb}")) || is_number_unit(&a.text, &b.text) {
+        c += 200;
+    }
+    if NO_END_WORDS.contains(&ca.as_str()) {
+        c += 40;
+    }
+    if a.text.ends_with([',', ';', ':']) {
+        c -= 30;
+    }
+    if b.start - a.end >= Tick(TICKS_PER_SECOND / 4) {
+        c -= 30;
+    }
+    if a.clip != b.clip {
+        c -= 20;
+    }
+    c
+}
+
+/// Split one phrase into captions of at most `max_words` words (one more allowed so a single
+/// word is never left over): the fewest captions, as even as possible, broken at the cheapest
+/// places ([`break_cost`]). Dynamic programming over break positions.
+fn split_phrase(p: &[usize], words: &[SeqWord], r: &ViRules, max_words: usize) -> Vec<Vec<usize>> {
+    let n = p.len();
+    if n <= max_words + 1 {
+        return vec![p.to_vec()];
+    }
+    // ponytail: a phrase with no pause for minutes (hostile input) is cut into blocks of
+    // 4×max words first, so the table stays small; real speech pauses long before that
+    if n > 6 * max_words {
+        return p.chunks(4 * max_words).flat_map(|c| split_phrase(c, words, r, max_words)).collect();
+    }
+    let k = n.div_ceil(max_words);
+    let ideal = n as f64 / k as f64;
+    let (lo, hi) = (2usize, max_words + 1);
+    // best[g][i]: cost of the first i words in g captions; from[g][i]: where caption g starts
+    let inf = i64::MAX / 4;
+    let mut best = vec![vec![inf; n + 1]; k + 1];
+    let mut from = vec![vec![0usize; n + 1]; k + 1];
+    if let Some(row) = best.get_mut(0)
+        && let Some(c) = row.get_mut(0)
+    {
+        *c = 0;
+    }
+    for g in 1..=k {
+        for i in 1..=n {
+            for size in lo..=hi.min(i) {
+                let j = i - size;
+                let Some(&prev) = best.get(g - 1).and_then(|row| row.get(j)) else { continue };
+                if prev >= inf {
+                    continue;
+                }
+                let dev = size as f64 - ideal;
+                let mut c = prev + (dev * dev * 6.0) as i64;
+                if i < n {
+                    let (Some(a), Some(b)) = (p.get(i - 1).and_then(|&x| words.get(x)), p.get(i).and_then(|&x| words.get(x))) else { continue };
+                    c += break_cost(a, b, r);
+                }
+                if let (Some(cell), Some(f)) = (best.get_mut(g).and_then(|row| row.get_mut(i)), from.get_mut(g).and_then(|row| row.get_mut(i)))
+                    && c < *cell
+                {
+                    *cell = c;
+                    *f = j;
+                }
+            }
+        }
+    }
+    if best.get(k).and_then(|row| row.get(n)).is_none_or(|&c| c >= inf) {
+        return p.chunks(max_words).map(<[usize]>::to_vec).collect();
+    }
+    let mut out = Vec::with_capacity(k);
+    let (mut g, mut i) = (k, n);
+    while g > 0 && i > 0 {
+        let j = from.get(g).and_then(|row| row.get(i)).copied().unwrap_or(0);
+        out.push(p.get(j..i).unwrap_or_default().to_vec());
+        i = j;
+        g -= 1;
+    }
+    out.reverse();
+    out
+}
+
 /// Lay the sequence transcript out as Vietnamese captions (see the module docs). Times are
 /// snapped to frames and placed with `base` (gap frames, minimum duration).
 pub fn vi_caption_blocks(words: &[SeqWord], r: &ViRules, base: &CaptionRules, rate: FrameRate) -> Vec<CaptionBlock> {
@@ -246,33 +337,27 @@ pub fn vi_caption_blocks(words: &[SeqWord], r: &ViRules, base: &CaptionRules, ra
         }
         kept.push(i);
     }
-    // 2) lines
-    let compound = |a: &SeqWord, b: &SeqWord| r.compounds.contains(&format!("{} {}", core(&a.text), core(&b.text)));
-    let mut groups: Vec<Vec<usize>> = Vec::new();
+    // 2) lines: phrases end at a pause, a sentence end or a cut; each phrase is then split into
+    // balanced captions at the best places (see `split_phrase`)
+    let mut phrases: Vec<Vec<usize>> = Vec::new();
     let mut current: Vec<usize> = Vec::new();
-    for (n, &i) in kept.iter().enumerate() {
+    for &i in &kept {
         let Some(w) = words.get(i) else { continue };
         if let Some(last) = current.last().and_then(|&l| words.get(l)) {
-            let pair_is_compound = compound(last, w);
-            // A sentence-ending word is not left alone on the next line.
-            let closes_sentence = ends_sentence(&w.text) && current.len() == max_words;
-            let full = current.len() >= max_words && !pair_is_compound && !closes_sentence;
-            // Nearly full and this word opens a compound with the next one: break before it.
-            let opens_compound = kept.get(n + 1).and_then(|&j| words.get(j)).is_some_and(|nx| compound(w, nx));
-            let nearly_full = current.len() + 1 == max_words && opens_compound && current.len() >= 2;
             // a caption never spans a cut: after edits two clips' words sit back to back. A cut
             // that only drops a few words of the same media (a stutter) is still one sentence.
             let stutter = w.item == last.item && w.index > last.index && w.index - last.index <= 5;
             let cut = w.clip != last.clip && !stutter;
-            if cut || w.start - last.end >= r.max_gap || ends_sentence(&last.text) || full || current.len() > max_words + 1 || nearly_full {
-                groups.push(std::mem::take(&mut current));
+            if cut || w.start - last.end >= r.max_gap || ends_sentence(&last.text) {
+                phrases.push(std::mem::take(&mut current));
             }
         }
         current.push(i);
     }
     if !current.is_empty() {
-        groups.push(current);
+        phrases.push(current);
     }
+    let groups: Vec<Vec<usize>> = phrases.iter().flat_map(|p| split_phrase(p, words, r, max_words)).collect();
     // 3) text (capitalised at sentence starts), times; a short gap is bridged so text doesn't blink
     let bridge = Tick(TICKS_PER_SECOND / 10 * 3);
     let mut spans: Vec<(Tick, Tick, String, std::ops::Range<usize>, Option<String>)> = Vec::with_capacity(groups.len());
@@ -332,7 +417,7 @@ pub fn break_lines(text: &str, r: &ViRules) -> String {
         if NO_END_WORDS.contains(&core(last).as_str()) {
             score += 30;
         }
-        if r.compounds.contains(&format!("{} {}", core(last), core(first))) {
+        if r.compounds.contains(&format!("{} {}", core(last), core(first))) || is_number_unit(last, first) {
             score += 100;
         }
         if last.ends_with([',', '.', '!', '?', '…', ':', ';']) {
