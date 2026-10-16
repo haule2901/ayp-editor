@@ -138,3 +138,16 @@ fn user_files_tune_rules_and_bad_files_are_ignored() {
     assert_eq!(ViRules::load_user(Path::new("/khong/co")).sentence_gap, ViRules::standard().sentence_gap);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// AYP: after cuts the words of two clips sit back to back on the timeline; a caption never
+/// spans a cut ("…hết tháng" | "sau đó…" were joined into one line).
+#[test]
+fn captions_break_at_clip_boundaries() {
+    let mut w = words("để sống hết tháng", 0.0);
+    let mut next = words("sau đó mình bán tài sản", 1.2);
+    for x in &mut next {
+        x.clip = ClipId(2);
+    }
+    w.extend(next);
+    assert_eq!(texts(&w, &rules(8, &[])), ["Để sống hết tháng", "sau đó mình bán tài sản"]);
+}
