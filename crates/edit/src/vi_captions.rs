@@ -251,8 +251,10 @@ pub fn vi_caption_blocks(words: &[SeqWord], r: &ViRules, base: &CaptionRules, ra
             // Nearly full and this word opens a compound with the next one: break before it.
             let opens_compound = kept.get(n + 1).and_then(|&j| words.get(j)).is_some_and(|nx| compound(w, nx));
             let nearly_full = current.len() + 1 == max_words && opens_compound && current.len() >= 2;
-            // a caption never spans a cut: after edits two clips' words sit back to back
-            let cut = w.clip != last.clip;
+            // a caption never spans a cut: after edits two clips' words sit back to back. A cut
+            // that only drops a few words of the same media (a stutter) is still one sentence.
+            let stutter = w.item == last.item && w.index > last.index && w.index - last.index <= 5;
+            let cut = w.clip != last.clip && !stutter;
             if cut || w.start - last.end >= r.max_gap || ends_sentence(&last.text) || full || current.len() > max_words + 1 || nearly_full {
                 groups.push(std::mem::take(&mut current));
             }

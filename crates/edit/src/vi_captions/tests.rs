@@ -151,3 +151,17 @@ fn captions_break_at_clip_boundaries() {
     w.extend(next);
     assert_eq!(texts(&w, &rules(8, &[])), ["Để sống hết tháng", "sau đó mình bán tài sản"]);
 }
+
+/// AYP: cutting out a stutter ("trả trả nợ") makes a new clip mid-sentence; that is not a real
+/// cut — the caption continues when only a few words of the same media were skipped.
+#[test]
+fn captions_flow_over_stutter_cuts() {
+    let mut w = words("để mình trả", 0.0);
+    let mut next = words("nợ xong sớm", 0.9);
+    for (i, x) in next.iter_mut().enumerate() {
+        x.clip = ClipId(2);
+        x.index = 4 + i; // one word ("trả") skipped in the media transcript
+    }
+    w.extend(next);
+    assert_eq!(texts(&w, &rules(8, &[])), ["Để mình trả nợ xong sớm"]);
+}
