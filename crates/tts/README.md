@@ -93,3 +93,9 @@ project's OpenAI-compatible server on ONNX Runtime (CPU), installed once with
 running (first start downloads the ONNX models from Hugging Face; later starts load in ~20 s)
 and leaves it running. Pace is a resample with the pitch change compensated; VieNeu's own
 watermark setting is left at its default. Measured on an M4: 4.4 s of speech in 3.7 s.
+
+Agents (control channel / MCP): `tts.preview`, `tts.create` and `tts.edit` synthesize inline, and
+control requests run on the UI loop, so a VieNeu narration that is not cached yet freezes the
+window while it speaks (the panel itself renders in the background first). Call
+`tts.render {…, "wait": false}` and poll `jobs.list` first; `tts.create` with the same settings
+then returns at once from the cache.

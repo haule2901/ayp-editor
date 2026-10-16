@@ -68,3 +68,32 @@ fn speaks_vietnamese_through_the_local_server() {
     assert_eq!(a.sample_rate, SAMPLE_RATE);
     assert!(a.seconds() > 2.0, "{}", a.seconds());
 }
+
+#[test]
+fn long_scripts_are_split_at_sentences_under_the_server_limit() {
+    let sentence = "Hôm nay mình kể chuyện tiết kiệm tiền khi mới đi làm. ";
+    let text = sentence.repeat(200); // ~11 000 chars, no pause markers
+    let parts = server_chunks(&text, 1500);
+    assert!(parts.len() >= 7);
+    assert!(parts.iter().all(|p| p.chars().count() <= 1500 && p.trim_end().ends_with('.')));
+    assert_eq!(parts.iter().map(|p| p.split_whitespace().count()).sum::<usize>(), text.split_whitespace().count(), "nothing lost");
+    // one sentence longer than the limit is cut at spaces, never mid-word
+    let long = "chữ ".repeat(1000);
+    assert!(server_chunks(&long, 1500).iter().all(|p| p.chars().count() <= 1500 && !p.starts_with("ữ")));
+    assert_eq!(server_chunks("Xin chào.", 1500), vec!["Xin chào.".to_string()]);
+}
+
+#[cfg(feature = "vieneu")]
+#[test]
+fn a_server_that_dies_at_start_fails_fast() {
+    let dir = std::env::temp_dir().join(format!("ayp-vieneu-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    let log = dir.join("log.txt");
+    std::fs::write(&log, "Traceback: boom\n").unwrap();
+    let mut child = std::process::Command::new("/usr/bin/false").spawn().unwrap();
+    let start = std::time::Instant::now();
+    let err = wait_ready(&mut child, 1, std::time::Duration::from_secs(60), &log).unwrap_err();
+    assert!(start.elapsed() < std::time::Duration::from_secs(5), "did not wait the whole timeout");
+    assert!(format!("{err}").contains("boom"), "{err}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

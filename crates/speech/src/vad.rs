@@ -51,9 +51,17 @@ pub fn speech_frames(db: &[f32], thr: f32, from: usize, to: usize) -> usize {
 /// rest of the window, but large-v3-turbo also stops early mid-speech, losing up to 27 s. When at
 /// least 0.3 s of speech (`speech(from, to)`, frames into the window) follows the stop, resume at
 /// the stop instead. Stops in the first 0.5 s keep the normal advance, so the loop always moves.
-pub fn resume_after_early_end(advance: usize, last_ts: Option<usize>, seg_frames: usize, speech: impl Fn(usize, usize) -> usize) -> usize {
+/// Loudness is not speech (music makes Whisper hallucinate and stop again), so only one resume in
+/// a row (`resumed_before`): the next early stop skips the window as Whisper would.
+pub fn resume_after_early_end(
+    advance: usize,
+    last_ts: Option<usize>,
+    seg_frames: usize,
+    resumed_before: bool,
+    speech: impl Fn(usize, usize) -> usize,
+) -> usize {
     match last_ts {
-        Some(ts) if ts >= 50 && ts < advance && speech(ts, seg_frames) >= 30 => ts,
+        Some(ts) if !resumed_before && ts >= 50 && ts < advance && speech(ts, seg_frames) >= 30 => ts,
         _ => advance,
     }
 }
@@ -121,12 +129,15 @@ mod tests {
         db[300..3000].iter_mut().for_each(|v| *v = -20.0);
         let thr = threshold(&db);
         // the model stopped at 2.9 s (frame 290) of a full window: resume there
-        assert_eq!(resume_after_early_end(3000, Some(290), 3000, |a, b| speech_frames(&db, thr, a, b)), 290);
+        assert_eq!(resume_after_early_end(3000, Some(290), 3000, false, |a, b| speech_frames(&db, thr, a, b)), 290);
         // nothing but silence after the last timestamp: keep skipping the window
         let quiet = vec![-70.0f32; 3000];
-        assert_eq!(resume_after_early_end(3000, Some(290), 3000, |a, b| speech_frames(&quiet, thr, a, b)), 3000);
+        assert_eq!(resume_after_early_end(3000, Some(290), 3000, false, |a, b| speech_frames(&quiet, thr, a, b)), 3000);
         // a stop in the first half second never stalls the loop
-        assert_eq!(resume_after_early_end(3000, Some(20), 3000, |a, b| speech_frames(&db, thr, a, b)), 3000);
+        assert_eq!(resume_after_early_end(3000, Some(20), 3000, false, |a, b| speech_frames(&db, thr, a, b)), 3000);
+        // loud non-speech (an outro song) makes Whisper hallucinate and stop again: only one
+        // resume in a row, the next early stop skips the window as Whisper would
+        assert_eq!(resume_after_early_end(3000, Some(290), 3000, true, |a, b| speech_frames(&db, thr, a, b)), 3000);
         // out-of-range frames are ignored, not a panic
         assert_eq!(speech_frames(&db, thr, 2990, 99_999), 10);
     }

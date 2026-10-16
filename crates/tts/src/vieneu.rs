@@ -4,8 +4,9 @@
 //! (`apps/openai_speech.py`, ONNX Runtime on the CPU) installed with `uv` in
 //! `<data dir>/vieneu/VieNeu-TTS` and listening on `127.0.0.1:`[`PORT`]. A voice starts the
 //! server when it is not running (loading takes ~20 s) and leaves it running for the next
-//! narration. Each speech segment of the script (pause markers kept) is one
-//! `POST /v1/audio/speech` returning 24 kHz 16-bit PCM. VieNeu has no speed control: pace is a
+//! narration. Each speech segment of the script (pause markers kept) is sent in pieces of at most
+//! 1 500 characters cut at sentence ends (`POST /v1/audio/speech`, 24 kHz 16-bit PCM); one
+//! narration at a time (the CPU server runs a single stream). VieNeu has no speed control: pace is a
 //! resample with the pitch change compensated by the pitch shifter of `filmcraft-audio-dsp`.
 
 use std::path::{Path, PathBuf};
@@ -111,6 +112,51 @@ pub fn stretch(x: &[f32], pace: f64) -> Vec<f32> {
         .collect()
 }
 
+/// Split a speech segment into pieces of at most `max_chars` characters for the server (it refuses
+/// inputs over 20 000 characters, and one long request would run into the timeout): at sentence
+/// ends, and a sentence that is still too long at spaces. Nothing is dropped.
+pub fn server_chunks(text: &str, max_chars: usize) -> Vec<String> {
+    let max = max_chars.max(16);
+    let mut sentences: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    for c in text.chars() {
+        cur.push(c);
+        if matches!(c, '.' | '!' | '?' | '…' | '\n') {
+            sentences.push(std::mem::take(&mut cur));
+        }
+    }
+    if !cur.trim().is_empty() {
+        sentences.push(cur);
+    }
+    // sentences longer than the limit: cut at spaces
+    let mut pieces: Vec<String> = Vec::new();
+    for snt in sentences {
+        if snt.chars().count() <= max {
+            pieces.push(snt);
+            continue;
+        }
+        let mut part = String::new();
+        for w in snt.split_inclusive(' ') {
+            if !part.is_empty() && part.chars().count() + w.chars().count() > max {
+                pieces.push(std::mem::take(&mut part));
+            }
+            part.push_str(w);
+        }
+        if !part.is_empty() {
+            pieces.push(part);
+        }
+    }
+    // pack consecutive pieces up to the limit
+    let mut out: Vec<String> = Vec::new();
+    for p in pieces {
+        match out.last_mut() {
+            Some(last) if last.chars().count() + p.chars().count() <= max => last.push_str(&p),
+            _ => out.push(p),
+        }
+    }
+    out.into_iter().map(|c| c.trim().to_string()).filter(|c| !c.is_empty()).collect()
+}
+
 fn json_str(s: &str) -> String {
     let mut o = String::with_capacity(s.len() + 2);
     o.push('"');
@@ -177,34 +223,64 @@ fn uv() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("uv"))
 }
 
-/// Start the server from `dir` unless it already answers; wait for it up to 120 s.
+/// The server process this FilmCraft started (if any). The lock also serialises narrations: the
+/// CPU server runs one stream and answers a second one with 429.
 #[cfg(feature = "vieneu")]
-fn ensure_server(dir: &Path) -> Result<(), TtsError> {
+fn server() -> &'static std::sync::Mutex<Option<std::process::Child>> {
+    static S: std::sync::OnceLock<std::sync::Mutex<Option<std::process::Child>>> = std::sync::OnceLock::new();
+    S.get_or_init(Default::default)
+}
+
+/// Wait until the server on `port` answers, failing at once (with the end of `log`) if `child`
+/// exits, or after `timeout`.
+#[cfg(feature = "vieneu")]
+pub fn wait_ready(child: &mut std::process::Child, port: u16, timeout: std::time::Duration, log: &Path) -> Result<(), TtsError> {
+    let tail = || {
+        let t = std::fs::read_to_string(log).unwrap_or_default();
+        let lines: Vec<&str> = t.lines().collect();
+        lines.get(lines.len().saturating_sub(5)..).unwrap_or_default().join(" | ")
+    };
+    let deadline = std::time::Instant::now() + timeout;
+    while std::time::Instant::now() < deadline {
+        if let Ok(Some(status)) = child.try_wait() {
+            return Err(TtsError::Model(format!("VieNeu dừng ngay khi khởi động ({status}): {}", tail())));
+        }
+        if healthy(port) {
+            return Ok(());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+    Err(TtsError::Model(format!("VieNeu không khởi động sau {} s — xem {}", timeout.as_secs(), log.display())))
+}
+
+/// Start the server from `dir` unless it already answers or is already starting; wait for it.
+#[cfg(feature = "vieneu")]
+fn ensure_server(dir: &Path, running: &mut Option<std::process::Child>) -> Result<(), TtsError> {
     if healthy(PORT) {
         return Ok(());
     }
     let log_path = dir.join("filmcraft-server.log");
-    let log = std::fs::File::create(&log_path).map_err(|e| TtsError::Model(format!("VieNeu log: {e}")))?;
-    let err = log.try_clone().map_err(|e| TtsError::Model(format!("VieNeu log: {e}")))?;
-    std::process::Command::new(uv())
-        .args(["run", "--no-sync", "python", "-m", "apps.openai_speech"])
-        .current_dir(dir)
-        .env("HOST", "127.0.0.1")
-        .env("PORT", PORT.to_string())
-        .env("VIENEU_BACKEND", "onnx")
-        .stdin(std::process::Stdio::null())
-        .stdout(log)
-        .stderr(err)
-        .spawn()
-        .map_err(|e| TtsError::Model(format!("không chạy được VieNeu (uv): {e}")))?;
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
-    while std::time::Instant::now() < deadline {
-        std::thread::sleep(std::time::Duration::from_millis(500));
-        if healthy(PORT) {
-            return Ok(());
-        }
+    let starting = running.as_mut().is_some_and(|c| matches!(c.try_wait(), Ok(None)));
+    if !starting {
+        let log = std::fs::File::create(&log_path).map_err(|e| TtsError::Model(format!("VieNeu log: {e}")))?;
+        let err = log.try_clone().map_err(|e| TtsError::Model(format!("VieNeu log: {e}")))?;
+        let child = std::process::Command::new(uv())
+            .args(["run", "--no-sync", "python", "-m", "apps.openai_speech"])
+            .current_dir(dir)
+            .env("HOST", "127.0.0.1")
+            .env("PORT", PORT.to_string())
+            .env("VIENEU_BACKEND", "onnx")
+            .stdin(std::process::Stdio::null())
+            .stdout(log)
+            .stderr(err)
+            .spawn()
+            .map_err(|e| TtsError::Model(format!("không chạy được VieNeu (uv): {e}")))?;
+        *running = Some(child);
     }
-    Err(TtsError::Model(format!("VieNeu không khởi động sau 120 s — xem {}", log_path.display())))
+    match running.as_mut() {
+        Some(c) => wait_ready(c, PORT, std::time::Duration::from_secs(180), &log_path),
+        None => Err(TtsError::Model("VieNeu chưa khởi động".into())),
+    }
 }
 
 /// A VieNeu voice ready to speak (feature `vieneu`).
@@ -234,7 +310,8 @@ impl Voice for VieneuVoice {
     fn synthesize(&self, text: &str, params: &Params) -> Result<Audio, TtsError> {
         check_text(text)?;
         params.check()?;
-        ensure_server(&self.dir)?;
+        let mut running = server().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        ensure_server(&self.dir, &mut running)?;
         let rate = SAMPLE_RATE;
         let max = (MAX_SECONDS * f64::from(rate)) as usize;
         let mut out: Vec<f32> = Vec::new();
@@ -248,7 +325,12 @@ impl Voice for VieneuVoice {
                     if !t.chars().any(char::is_alphanumeric) {
                         continue;
                     }
-                    out.extend(speak(PORT, &t, self.preset)?);
+                    for chunk in server_chunks(&t, 1500) {
+                        out.extend(speak(PORT, &chunk, self.preset)?);
+                        if out.len() > max {
+                            return Err(TtsError::AudioTooLong);
+                        }
+                    }
                     spoke = true;
                 }
             }

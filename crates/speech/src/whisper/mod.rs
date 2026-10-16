@@ -259,6 +259,7 @@ impl Transcriber for Whisper {
         // AYP: speech levels at the mel frame rate (10 ms), to resume after an early stop
         let db = crate::vad::frame_db(audio);
         let thr = crate::vad::threshold(&db);
+        let mut resumed = false;
         let mut seek = 0usize;
         while seek < content_frames {
             let frac = seek as f32 / content_frames.max(1) as f32;
@@ -296,11 +297,13 @@ impl Transcriber for Whisper {
             };
             let last_ts =
                 if single_ending { toks.last().map(|&t| (t.saturating_sub(self.tok.timestamp_begin) as usize * FRAMES_PER_TS).min(seg_frames)) } else { None };
+            let normal = advance;
             let advance = if skip {
                 advance
             } else {
-                crate::vad::resume_after_early_end(advance, last_ts, seg_frames, |a, b| crate::vad::speech_frames(&db, thr, seek + a, seek + b))
+                crate::vad::resume_after_early_end(advance, last_ts, seg_frames, resumed, |a, b| crate::vad::speech_frames(&db, thr, seek + a, seek + b))
             };
+            resumed = advance != normal;
             let text: Vec<u32> = toks.iter().copied().filter(|&t| t < self.tok.eot).collect();
             if !skip && !text.is_empty() {
                 // the text up to the last complete segment (what `advance` covers)
