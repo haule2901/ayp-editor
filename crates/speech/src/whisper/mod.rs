@@ -256,6 +256,9 @@ impl Transcriber for Whisper {
             return Err(SpeechError::Model(format!("the model does not know the language `{}`", language.unwrap_or_default())));
         }
         let mut words: Vec<Word> = Vec::new();
+        // AYP: speech levels at the mel frame rate (10 ms), to resume after an early stop
+        let db = crate::vad::frame_db(audio);
+        let thr = crate::vad::threshold(&db);
         let mut seek = 0usize;
         while seek < content_frames {
             let frac = seek as f32 / content_frames.max(1) as f32;
@@ -290,6 +293,13 @@ impl Transcriber for Whisper {
             let advance = match last_pair {
                 Some(i) if !single_ending => ((toks[i - 1] - self.tok.timestamp_begin) as usize * FRAMES_PER_TS).clamp(1, seg_frames),
                 _ => seg_frames,
+            };
+            let last_ts =
+                if single_ending { toks.last().map(|&t| (t.saturating_sub(self.tok.timestamp_begin) as usize * FRAMES_PER_TS).min(seg_frames)) } else { None };
+            let advance = if skip {
+                advance
+            } else {
+                crate::vad::resume_after_early_end(advance, last_ts, seg_frames, |a, b| crate::vad::speech_frames(&db, thr, seek + a, seek + b))
             };
             let text: Vec<u32> = toks.iter().copied().filter(|&t| t < self.tok.eot).collect();
             if !skip && !text.is_empty() {
