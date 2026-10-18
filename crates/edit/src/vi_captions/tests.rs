@@ -333,3 +333,39 @@ fn replacements_come_before_line_breaks() {
     let t = texts(&words("còn có lay up nữa không", 0.0), &r);
     assert!(t.concat().contains("layoff"), "{t:?}");
 }
+
+/// The Wiktionary list knows everyday compounds ("tồn tại", "làm việc", "tính năng").
+#[test]
+fn everyday_compounds_are_known() {
+    let r = ViRules::standard();
+    for c in ["tồn tại", "làm việc", "tính năng", "hiệu suất", "thị trường"] {
+        assert!(r.compounds.contains(c), "{c}");
+    }
+    // "hoàn thành công việc" = hoàn thành | công việc: the overlap "thành công" may break
+    let t = break_lines("để mình hoàn thành công việc thì anh nghĩ", &r);
+    assert!(!t.contains("hoàn\nthành") && !t.contains("công\nviệc"), "{t}");
+}
+
+/// A one- or two-word sentence ("Why?", "Đúng không?") joins the caption before it.
+#[test]
+fn tiny_sentences_join_the_previous_caption() {
+    let mut r = ViRules::standard();
+    r.polish = false;
+    r.highlight = None;
+    let mut w = words("mình làm cái này để làm cái gì.", 0.0);
+    w.extend(words("Why?", 2.4));
+    assert_eq!(texts(&w, &r).len(), 1, "{:?}", texts(&w, &r));
+}
+
+/// Captions are cut so that each one breaks into lines cleanly (no wide line, no lonely word).
+#[test]
+fn captions_are_cut_where_their_lines_read_well() {
+    let mut r = ViRules::standard();
+    r.polish = false;
+    r.keywords = vec!["không chịu thay đổi".into()];
+    let t = texts(&words("hai là cái nhóm làm việc bình thường nhưng không chịu thay đổi thì nhóm làm việc bình thường không chịu thay đổi", 0.0), &r);
+    for c in &t {
+        let plain: String = c.replace("<c #ffd200>", "").replace("</c>", "");
+        assert!(plain.lines().all(|l| l.chars().count() <= r.max_line_chars && l.split(' ').count() >= 2), "{t:?}");
+    }
+}

@@ -25,6 +25,9 @@ use filmcraft_time::{FrameRate, TICKS_PER_SECOND, Tick};
 use crate::transcript::{CaptionBlock, CaptionRules, SeqWord, place_blocks, snap_span};
 
 const COMPOUNDS: &str = include_str!("vi_compounds.txt");
+/// AYP: two-syllable words from Wiktionary (CC BY-SA 4.0, see the file's header). Only used to
+/// keep compounds whole — not to decide which capitals are stray (names would be lowered).
+const COMPOUNDS_WIKTIONARY: &str = include_str!("vi_compounds_wiktionary.txt");
 
 /// Prepositions, conjunctions, classifiers… (CapCut Sub Fixer's NO_END_WORDS): ordinary words.
 const NO_END_WORDS: &[&str] = &[
@@ -99,10 +102,12 @@ fn add_syllables(common: &mut HashSet<String>, compounds: &HashSet<String>) {
 
 impl ViRules {
     pub fn standard() -> Self {
-        let compounds: HashSet<String> = COMPOUNDS.lines().map(|l| l.trim().to_lowercase()).filter(|l| !l.is_empty() && !l.starts_with('#')).collect();
+        let list = |t: &'static str| t.lines().map(|l| l.trim().to_lowercase()).filter(|l| !l.is_empty() && !l.starts_with('#'));
+        let mut compounds: HashSet<String> = list(COMPOUNDS).collect();
         let mut common = set(NO_END_WORDS);
         common.extend(set(POLISH_COMMON));
         add_syllables(&mut common, &compounds);
+        compounds.extend(list(COMPOUNDS_WIKTIONARY));
         let gap = Tick(TICKS_PER_SECOND / 10 * 6);
         Self {
             max_words: 10,
@@ -301,7 +306,8 @@ fn split_phrase(p: &[usize], words: &[SeqWord], r: &ViRules, max_words: usize) -
     // two lines of at most max_line_chars, minus slack for a balanced break
     let cap = if r.max_line_chars == 0 { usize::MAX } else { (2 * r.max_line_chars).saturating_sub(6).max(8) };
     let total = chars(p);
-    if n <= max_words + 1 && total <= cap {
+    let texts = |g: &[usize]| g.iter().filter_map(|&i| words.get(i)).map(|w| w.text.as_str()).filter(|t| !t.is_empty()).collect::<Vec<_>>();
+    if n <= max_words + 1 && total <= cap && layout_cost(&texts(p), r) < 250 {
         return vec![p.to_vec()];
     }
     if n < 2 {
@@ -334,9 +340,11 @@ fn split_phrase(p: &[usize], words: &[SeqWord], r: &ViRules, max_words: usize) -
                 }
                 let dev = size as f64 - ideal;
                 let mut c = prev + (dev * dev * 6.0) as i64;
-                if chars(p.get(j..i).unwrap_or_default()) > cap {
+                let grp = p.get(j..i).unwrap_or_default();
+                if chars(grp) > cap {
                     c += 1000;
                 }
+                c += layout_cost(&texts(grp), r);
                 if i < n {
                     let (Some(a), Some(b)) = (p.get(i - 1).and_then(|&x| words.get(x)), p.get(i).and_then(|&x| words.get(x))) else { continue };
                     c += break_cost(a, b, r);
@@ -423,10 +431,12 @@ pub fn vi_caption_blocks(words: &[SeqWord], r: &ViRules, base: &CaptionRules, ra
             (Some(prev), Some(first)) => prev.last().and_then(|&l| words.get(l)).is_some_and(|last| {
                 let stutter = first.item == last.item && first.index > last.index && first.index - last.index <= 5;
                 let same = first.clip == last.clip || stutter;
-                same && !ends_sentence(&last.text)
+                // a one- or two-word sentence ("Why?", "Đúng không?") never stands alone
+                let tiny = p.len() <= 2;
+                same && (tiny || !ends_sentence(&last.text))
                     && first.start - last.end < Tick(TICKS_PER_SECOND * 3 / 2)
                     && (prev.len() < r.min_words || p.len() < r.min_words)
-                    && prev.len() + p.len() <= max_words
+                    && prev.len() + p.len() <= max_words + usize::from(tiny)
             }),
             _ => false,
         };
@@ -486,6 +496,15 @@ pub fn break_lines(text: &str, r: &ViRules) -> String {
     if r.line_chars == 0 || text.chars().count() <= r.line_chars || words.len() < 2 || text.contains('\n') {
         return text.to_string();
     }
+    match best_break(&words, r) {
+        Some((_, k)) => format!("{}\n{}", words.get(..k).unwrap_or_default().join(" "), words.get(k..).unwrap_or_default().join(" ")),
+        None => text.to_string(),
+    }
+}
+
+/// The best place to break `words` into two lines and its score (lower is better; ≥ 250 means a
+/// lonely word, a line too wide or a split compound could not be avoided).
+fn best_break(words: &[&str], r: &ViRules) -> Option<(i64, usize)> {
     let len = |ws: &[&str]| ws.iter().map(|w| w.chars().count()).sum::<usize>() + ws.len().saturating_sub(1);
     let mut best: Option<(i64, usize)> = None;
     for k in 1..words.len() {
@@ -514,10 +533,17 @@ pub fn break_lines(text: &str, r: &ViRules) -> String {
             best = Some((score, k));
         }
     }
-    match best {
-        Some((_, k)) => format!("{}\n{}", words.get(..k).unwrap_or_default().join(" "), words.get(k..).unwrap_or_default().join(" ")),
-        None => text.to_string(),
+    best
+}
+
+/// How badly a caption made of `words` lays out: 0 when it fits one line, else the score of its
+/// best line break (see [`best_break`]).
+fn layout_cost(words: &[&str], r: &ViRules) -> i64 {
+    let chars = words.iter().map(|w| w.chars().count()).sum::<usize>() + words.len().saturating_sub(1);
+    if r.line_chars == 0 || chars <= r.line_chars || words.len() < 2 {
+        return 0;
     }
+    best_break(words, r).map_or(0, |(s, _)| s.max(0))
 }
 
 /// The rule's ASR fixes `(heard, meant)`, matched on whole words (punctuation and case ignored;

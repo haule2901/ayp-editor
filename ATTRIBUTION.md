@@ -168,3 +168,10 @@ SHA-256 (`crates/speech/src/models.rs`, `docs/transcripts.md`).
 | Asset | Author | Source | Licence |
 |---|---|---|---|
 | Whisper tiny / base / small speech-recognition weights (`model.safetensors`, `config.json`, `generation_config.json`, `tokenizer.json`) | OpenAI | `https://huggingface.co/openai/whisper-{tiny,base,small}` (revisions `169d4a43…`, `e37978b9…`, `973afd24…`); weights released with `https://github.com/openai/whisper` | MIT (weights and code, github.com/openai/whisper); the Hugging Face conversion is labelled Apache-2.0 |
+
+## Vietnamese word list (AYP captions)
+
+`crates/edit/src/vi_compounds_wiktionary.txt` — two-syllable Vietnamese words extracted from
+Wiktionary via kaikki.org (Wiktextract, Vietnamese dump of 2026-10-03). © Wiktionary contributors,
+licensed CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Used only to avoid
+breaking caption lines inside a word.
