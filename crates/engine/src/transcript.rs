@@ -416,7 +416,7 @@ fn create_captions_vi(s: &mut Session, p: &Value) -> Result<Value> {
         _ => ViRules::standard(),
     };
     if let Some(n) = u64_p(p, "maxWords") {
-        rules.max_words = usize::try_from(n.clamp(2, 30)).unwrap_or(8);
+        rules.max_words = usize::try_from(n.clamp(1, 30)).unwrap_or(8);
     }
     if let Some(b) = bool_p(p, "polish") {
         rules.polish = b;
@@ -431,6 +431,8 @@ fn create_captions_vi(s: &mut Session, p: &Value) -> Result<Value> {
     let portrait = s.active_sequence().is_some_and(|q| q.settings.height > q.settings.width);
     let n = blocks.len();
     let tid = s.edit_sequence("Phụ đề tiếng Việt (AYP)", |q, ctx, st| {
+        // re-creating keeps the style of the track it replaces (a preset the user applied)
+        let kept = q.caption_tracks.iter().find(|t| t.name == AYP_TRACK).map(|t| t.style.clone());
         q.caption_tracks.retain(|t| t.name != AYP_TRACK);
         let tid = TrackId(ctx.alloc());
         let mut t = CaptionTrack::new(tid, AYP_TRACK.to_string(), CaptionFormat::default());
@@ -444,6 +446,9 @@ fn create_captions_vi(s: &mut Session, p: &Value) -> Result<Value> {
             margin: if portrait { 0.28 } else { 0.08 },
             ..CaptionStyle::default()
         };
+        if let Some(k) = kept {
+            t.style = k;
+        }
         t.captions = tx::blocks_to_captions(&blocks, &words, ctx);
         q.caption_tracks.insert(0, t);
         st.caption_selection.clear();
@@ -544,7 +549,7 @@ pub fn commands() -> Vec<CommandSpec> {
             "transcript.createCaptionsVi",
             "Phụ đề tiếng Việt (AYP)…",
             &["Sequence", "Transcript"],
-            r#"{"maxWords":n?,"polish":bool?,"userRules":bool?,"keywords":[str]?}"#,
+            r#"{"maxWords":1..30?,"polish":bool?,"userRules":bool?,"keywords":[str]?}"#,
             has_transcript,
             create_captions_vi,
             true,

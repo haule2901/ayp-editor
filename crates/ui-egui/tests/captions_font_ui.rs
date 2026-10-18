@@ -130,3 +130,28 @@ fn caption_preset_picker_applies_and_saves() {
     assert!(names["presets"].as_array().unwrap().iter().any(|p| p["name"] == "Của tôi" && p["builtin"] == false), "{names}");
     assert!(d.ids("text.captions.preset.Của tôi.delete").len() == 1, "saved preset listed with a delete button");
 }
+
+/// AYP: Captions ▸ More holds the CapCut-like settings: the shadow checkbox and the highlight
+/// mode set the track style.
+#[test]
+fn caption_more_styles_set_shadow_and_highlight() {
+    let mut d = Driver::demo();
+    d.ok("ui.set", json!({"workspace": "Captions and Graphics"}));
+    let track = d.ok("engine.execute", json!({"command": "captions.newTrack", "params": {"format": "Subtitle"}}))["track"].as_u64().unwrap();
+    d.ok("engine.execute", json!({"command": "captions.add", "params": {"track": track, "text": "Hello", "seconds": 1.0}}));
+    d.frames(2);
+    d.ok("ui.click", json!({"id": "text.tab.Captions"}));
+    d.frames(3);
+    d.ok("ui.click", json!({"id": "text.captions.style.more"}));
+    d.frames(3);
+    d.ok("ui.click", json!({"id": "text.captions.style.shadow"}));
+    d.frames(3);
+    let style = |d: &mut Driver| d.ok("engine.execute", json!({"command": "captions.list", "params": {}}))["tracks"][0]["style"].clone();
+    assert_eq!(style(&mut d)["shadow"], true);
+    for id in ["text.captions.viWords", "text.captions.viRecreate", "text.captions.style.backgroundRoundRadius", "text.captions.style.tracking"] {
+        assert_eq!(d.ids(id).len(), 1, "{id} shown");
+    }
+    d.ok("ui.click", json!({"id": "text.captions.style.highlight.activeWord"}));
+    d.frames(3);
+    assert_eq!(style(&mut d)["highlight"], "activeWord");
+}

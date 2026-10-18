@@ -426,6 +426,10 @@ pub struct KeyframeRef {
     pub time: filmcraft_time::Tick,
 }
 
+fn vi_caption_words() -> usize {
+    8
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UiState {
     #[serde(default)]
@@ -497,6 +501,9 @@ pub struct UiState {
     /// AYP: Text panel ▸ Captions: name typed for saving the track style as a preset.
     #[serde(default)]
     pub caption_preset_name: String,
+    /// AYP: Text panel ▸ Captions ▸ More: most words a Vietnamese caption holds when re-created.
+    #[serde(default = "vi_caption_words")]
+    pub vi_caption_words: usize,
     /// Text panel ▸ Transcript: selected words of the sequence transcript (anchor, end; indices as
     /// `transcript.inspect` lists them).
     #[serde(default)]
@@ -990,6 +997,7 @@ impl Default for UiState {
             text_tab: captions_tab(),
             caption_search: String::new(),
             caption_preset_name: String::new(),
+            vi_caption_words: vi_caption_words(),
             transcript_sel: None,
             transcript_search: String::new(),
             play_after_render: true,

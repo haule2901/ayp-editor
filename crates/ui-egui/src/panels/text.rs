@@ -6,7 +6,7 @@
 //! the selection marks In/Out and can be extracted or lifted (`transcript.*` commands).
 
 use egui::{Align2, Color32, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
-use filmcraft_project::{CaptionAlign, CaptionAnchor, CaptionFormat};
+use filmcraft_project::{CaptionAlign, CaptionAnchor, CaptionFormat, CaptionHighlight, CaptionStyle};
 use filmcraft_time::{TimeDisplay, format_time};
 use serde_json::{Value, json};
 
@@ -166,7 +166,8 @@ fn captions(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     }
 
     // ---- style strip
-    let style_h = 30.0;
+    // AYP: two rows (presets, font… then alignment, position, More) so nothing runs off a narrow panel
+    let style_h = 60.0;
     let style_rect = Rect::from_min_max(pos2(rect.min.x + 10.0, rect.max.y - style_h), pos2(rect.max.x - 10.0, rect.max.y - 2.0));
     style_strip(app, ui, style_rect, track_idx, &mut actions);
 
@@ -415,7 +416,7 @@ fn style_strip(app: &mut FilmcraftApp, ui: &mut egui::Ui, r: Rect, track_idx: us
     let Some(tr) = app.session.active_sequence().and_then(|q| q.caption_tracks.get(track_idx)).cloned() else { return };
     let st = tr.style.clone();
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r).id_salt("caption-style"));
-    child.horizontal_centered(|ui| {
+    child.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
         preset_picker(app, ui, tr.id.0, actions);
         let r = egui::ComboBox::from_id_salt(("caption-font", tr.id.0)).selected_text(&st.font).width(130.0).height(400.0).show_ui(ui, |ui| {
@@ -481,7 +482,171 @@ fn style_strip(app: &mut FilmcraftApp, ui: &mut egui::Ui, r: Rect, track_idx: us
                 actions.push(("captions.setStyle".into(), json!({"track": tr.id.0, "anchor": name})));
             }
         }
+        more_styles(app, ui, tr.id.0, &st, actions);
     });
+}
+
+/// A number field that sets `key` of the caption style when an edit or drag ends (one undo step
+/// per drag; a drag ended by Escape keeps the old value).
+#[allow(clippy::too_many_arguments)]
+fn style_number(
+    app: &mut FilmcraftApp,
+    ui: &mut egui::Ui,
+    id: &str,
+    value: f32,
+    range: std::ops::RangeInclusive<f32>,
+    speed: f64,
+    key: &str,
+    track: u64,
+    actions: &mut Vec<(String, Value)>,
+) {
+    let mut v = value;
+    let resp = ui.add(crate::widgets::number_drag(&mut v).range(range).speed(speed));
+    app.auto.add(id, resp.rect, key);
+    let escaped = resp.drag_stopped() && ui.input(|i| i.key_pressed(egui::Key::Escape));
+    if !escaped && (resp.drag_stopped() || (resp.changed() && !resp.dragged())) {
+        actions.push(("captions.setStyle".into(), json!({"track": track, (key): v})));
+    }
+}
+
+/// A colour button that sets `key` of the caption style.
+fn style_colour(app: &mut FilmcraftApp, ui: &mut egui::Ui, id: &str, c: [u8; 4], key: &str, track: u64, actions: &mut Vec<(String, Value)>) {
+    let mut col = Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3]);
+    let resp = egui::color_picker::color_edit_button_srgba(ui, &mut col, egui::color_picker::Alpha::OnlyBlend);
+    app.auto.add(id, resp.rect, key);
+    if resp.changed() {
+        actions.push(("captions.setStyle".into(), json!({"track": track, (key): col.to_srgba_unmultiplied()})));
+    }
+}
+
+/// A checkbox that sets `key` of the caption style.
+fn style_check(app: &mut FilmcraftApp, ui: &mut egui::Ui, id: &str, value: bool, label: &str, key: &str, track: u64, actions: &mut Vec<(String, Value)>) {
+    let mut b = value;
+    let resp = ui.checkbox(&mut b, label);
+    app.auto.add(id, resp.rect, key);
+    if resp.changed() {
+        actions.push(("captions.setStyle".into(), json!({"track": track, (key): b})));
+    }
+}
+
+/// AYP: the rest of the caption style (CapCut-like): weight, letter spacing, outline, shadow,
+/// rounded box, spoken-word highlight, and words per Vietnamese caption.
+fn more_styles(app: &mut FilmcraftApp, ui: &mut egui::Ui, track: u64, st: &CaptionStyle, actions: &mut Vec<(String, Value)>) {
+    let r = egui::ComboBox::from_id_salt(("caption-more", track))
+        .selected_text(tl!("More"))
+        .width(70.0)
+        .height(600.0)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .show_ui(ui, |ui| {
+            let dim = app.tokens.text_dim;
+            let label = |ui: &mut egui::Ui, s: &str| {
+                ui.label(egui::RichText::new(s).size(11.0).color(dim));
+            };
+            egui::Grid::new(("caption-more-grid", track)).num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
+                label(ui, tl!("Weight"));
+                // (a combo box inside this popup would close it: plain choices instead)
+                ui.horizontal(|ui| {
+                    for (f, short) in [("Regular", "R"), ("Medium", "M"), ("SemiBold", "SB"), ("Bold", "B"), ("ExtraBold", "EB"), ("Black", "Bk")] {
+                        let resp = ui.selectable_label(st.font_style.eq_ignore_ascii_case(f), short).on_hover_text(f);
+                        app.auto.add(&format!("text.captions.style.weight.{f}"), resp.rect, f);
+                        if resp.clicked() {
+                            actions.push(("captions.setStyle".into(), json!({"track": track, "fontStyle": f})));
+                        }
+                    }
+                });
+                ui.end_row();
+                label(ui, tl!("Letter spacing"));
+                style_number(app, ui, "text.captions.style.tracking", st.tracking, -200.0..=1000.0, 1.0, "tracking", track, actions);
+                ui.end_row();
+                label(ui, tl!("Outline"));
+                ui.horizontal(|ui| {
+                    style_number(app, ui, "text.captions.style.outline", st.outline, 0.0..=40.0, 0.2, "outline", track, actions);
+                    style_colour(app, ui, "text.captions.style.outlineColor", st.outline_color, "outlineColor", track, actions);
+                });
+                ui.end_row();
+                label(ui, tl!("Shadow"));
+                ui.horizontal(|ui| {
+                    style_check(app, ui, "text.captions.style.shadow", st.shadow, "", "shadow", track, actions);
+                    style_colour(app, ui, "text.captions.style.shadowColor", st.shadow_color, "shadowColor", track, actions);
+                });
+                ui.end_row();
+                label(ui, tl!("Shadow distance"));
+                style_number(app, ui, "text.captions.style.shadowDistance", st.shadow_distance, 0.0..=100.0, 0.2, "shadowDistance", track, actions);
+                ui.end_row();
+                label(ui, tl!("Shadow softness"));
+                style_number(app, ui, "text.captions.style.shadowSmoothing", st.shadow_smoothing, 0.0..=50.0, 0.2, "shadowSmoothing", track, actions);
+                ui.end_row();
+                label(ui, tl!("Shadow angle"));
+                style_number(app, ui, "text.captions.style.shadowAngle", st.shadow_angle, -180.0..=180.0, 1.0, "shadowAngle", track, actions);
+                ui.end_row();
+                label(ui, tl!("Box colour"));
+                style_colour(app, ui, "text.captions.style.backgroundColor", st.background_color, "backgroundColor", track, actions);
+                ui.end_row();
+                label(ui, tl!("Corner roundness"));
+                style_number(
+                    app,
+                    ui,
+                    "text.captions.style.backgroundRoundRadius",
+                    st.background_round_radius,
+                    0.0..=1.0,
+                    0.01,
+                    "backgroundRoundRadius",
+                    track,
+                    actions,
+                );
+                ui.end_row();
+                label(ui, tl!("Box padding"));
+                style_number(app, ui, "text.captions.style.backgroundPadding", st.background_padding, 0.0..=100.0, 0.2, "backgroundPadding", track, actions);
+                ui.end_row();
+                label(ui, "");
+                style_check(
+                    app,
+                    ui,
+                    "text.captions.style.backgroundBlock",
+                    st.background_block,
+                    tl!("One box for all lines"),
+                    "backgroundBlock",
+                    track,
+                    actions,
+                );
+                ui.end_row();
+                label(ui, tl!("Highlight"));
+                let names = |h: CaptionHighlight| match h {
+                    CaptionHighlight::None => tl!("None"),
+                    CaptionHighlight::Karaoke => tl!("Karaoke"),
+                    CaptionHighlight::ActiveWord => tl!("Active word"),
+                };
+                ui.horizontal(|ui| {
+                    for (h, key) in [(CaptionHighlight::None, "none"), (CaptionHighlight::Karaoke, "karaoke"), (CaptionHighlight::ActiveWord, "activeWord")] {
+                        let resp = ui.selectable_label(st.highlight == h, names(h));
+                        app.auto.add(&format!("text.captions.style.highlight.{key}"), resp.rect, key);
+                        if resp.clicked() {
+                            actions.push(("captions.setStyle".into(), json!({"track": track, "highlight": key})));
+                        }
+                    }
+                });
+                ui.end_row();
+                label(ui, tl!("Highlight colour"));
+                style_colour(app, ui, "text.captions.style.highlightColor", st.highlight_color, "highlightColor", track, actions);
+                ui.end_row();
+                label(ui, tl!("Active word size"));
+                style_number(app, ui, "text.captions.style.highlightScale", st.highlight_scale, 0.5..=3.0, 0.01, "highlightScale", track, actions);
+                ui.end_row();
+            });
+            ui.separator();
+            // Vietnamese captions are re-made from the transcript with at most this many words each
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(tl!("Words per caption")).size(11.0).color(dim));
+                let s = ui.add(egui::Slider::new(&mut app.ui.vi_caption_words, 1..=12));
+                app.auto.add("text.captions.viWords", s.rect, "Words per caption");
+                let b = ui.button(tl!("Re-create Vietnamese captions"));
+                app.auto.add("text.captions.viRecreate", b.rect, "Re-create Vietnamese captions");
+                if b.clicked() {
+                    actions.push(("transcript.createCaptionsVi".into(), json!({"maxWords": app.ui.vi_caption_words})));
+                }
+            });
+        });
+    app.auto.add("text.captions.style.more", r.response.rect, "More caption styles");
 }
 
 /// AYP: caption presets — apply a built-in or saved style, save the track's style under a name,

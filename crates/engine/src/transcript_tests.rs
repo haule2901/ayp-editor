@@ -211,10 +211,19 @@ fn vietnamese_captions_replace_their_track_and_undo() {
     assert!((st.margin - 0.28).abs() < 1e-6, "the block sits about two thirds down a vertical frame");
     q.check().unwrap();
 
+    // AYP: re-creating keeps the track's style (a preset the user applied)
+    s.execute("captions.setStyle", json!({"track": "C1", "highlight": "karaoke"})).unwrap();
     s.execute("transcript.createCaptionsVi", json!({"maxWords": 4, "userRules": false})).unwrap();
     let q = s.active_sequence().unwrap();
     assert_eq!(q.caption_tracks.iter().filter(|t| t.name == "Phụ đề AYP").count(), 1, "replaced, not stacked");
     assert!(q.caption_tracks[0].captions.len() >= 2);
+    assert_eq!(q.caption_tracks[0].style.highlight, filmcraft_project::CaptionHighlight::Karaoke);
+    // one word per caption (TikTok style)
+    s.execute("transcript.createCaptionsVi", json!({"maxWords": 1, "userRules": false})).unwrap();
+    let caps = &s.active_sequence().unwrap().caption_tracks[0].captions;
+    assert!(caps.len() >= 4 && caps.iter().all(|c| c.words.len() <= 2), "compounds stay whole: {:?}", caps.iter().map(|c| &c.text).collect::<Vec<_>>());
+    s.execute("edit.undo", json!({})).unwrap();
+    s.execute("edit.undo", json!({})).unwrap();
 
     s.execute("edit.undo", json!({})).unwrap();
     s.execute("edit.undo", json!({})).unwrap();

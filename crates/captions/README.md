@@ -83,3 +83,18 @@ implementation's code was consulted.
   (23.976 / 25 / 29.97 / 59.94, ids, speakers) round-trip frame-exactly; DFXP round-trips after
   snapping to frames; readers never panic on random bytes (also a valid STL header followed by
   random blocks, and random MCC lines); SRT → VTT → SCC keeps text and frames.
+
+## AYP fork: CapCut-style caption styling
+
+Track style (`CaptionStyle`, field names follow CapCut drafts where they exist):
+word timings (`Caption.words`, kept through split / merge / text edits / trims), karaoke or
+active-word highlight (`highlight`, `highlight_color` = CapCut `ktv_color`, `highlight_scale`),
+drop shadow (`shadow`, `shadow_color`, `shadow_angle`, `shadow_distance`, `shadow_smoothing`),
+rounded padded box per line or around the block (`background_round_radius`,
+`background_padding`, `background_block`), font weight (`font_style`) and letter spacing
+(`tracking`). Presets: four built-ins plus the user's own (`captions.presets`,
+`captions.applyPreset`, `captions.savePreset`, `captions.deletePreset`; saved in
+`<data dir>/caption-presets.json`). Text panel ▸ Captions: Preset and More.
+
+Not done yet: in/out/loop text animations, dragging captions on the frame, per-caption styles,
+gradient / glow, colour emoji, translation, reading CapCut drafts.
