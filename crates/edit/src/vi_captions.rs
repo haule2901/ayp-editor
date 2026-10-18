@@ -337,7 +337,9 @@ fn split_phrase(p: &[usize], words: &[SeqWord], r: &ViRules, max_words: usize) -
     // ponytail: a phrase with no pause for minutes (hostile input) is cut into blocks of
     // 4×max words first, so the table stays small; real speech pauses long before that
     if n > 6 * max_words {
-        return p.chunks(4 * max_words).flat_map(|c| split_phrase(c, words, r, max_words)).collect();
+        // even blocks (81 words → 41 + 40, never 40 + 40 + 1)
+        let blocks = n.div_ceil(4 * max_words);
+        return p.chunks(n.div_ceil(blocks)).flat_map(|c| split_phrase(c, words, r, max_words)).collect();
     }
     let k = n.div_ceil(max_words).max(total.div_ceil(cap)).min(n / 2).max(1);
     let ideal = n as f64 / k as f64;
@@ -535,7 +537,11 @@ fn best_break(words: &[&str], r: &ViRules) -> Option<(i64, usize)> {
         if NO_END_WORDS.contains(&core(last).as_str()) {
             score += 30;
         }
-        if unbreakable(last, first, r) {
+        // "hoàn thành công việc" = hoàn thành | công việc: a compound overlapped by compounds on
+        // both sides ("thành công") is the place to break, not a word to keep whole
+        let pair = |x: Option<&&str>, y: Option<&&str>| x.zip(y).is_some_and(|(x, y)| r.compounds.contains(&format!("{} {}", core(x), core(y))));
+        let overlapped = k >= 2 && pair(words.get(k - 2), words.get(k - 1)) && pair(words.get(k), words.get(k + 1));
+        if unbreakable(last, first, r) && !overlapped {
             score += 400; // worse than a line the renderer has to wrap
         }
         if last.ends_with([',', '.', '!', '?', '…', ':', ';']) {

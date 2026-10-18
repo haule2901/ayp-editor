@@ -402,3 +402,39 @@ fn particles_stay_with_what_they_end() {
     }
     assert_eq!(break_lines("sắp tới còn layoff không anh ơi", &r).lines().last().map(|l| l.starts_with("ơi")), Some(false));
 }
+
+/// "hoàn thành công việc" reads hoàn thành | công việc: the overlap "thành công" may break.
+#[test]
+fn overlapping_compounds_break_between_them() {
+    let r = ViRules::standard();
+    assert_eq!(break_lines("ngoài mình hoàn thành công việc thì", &r), "ngoài mình hoàn thành\ncông việc thì");
+}
+
+/// A trailing "không?" after a long stretch still joins it, and when one caption can't be laid out
+/// cleanly the phrase gets one more caption.
+#[test]
+fn tiny_tails_join_and_crowded_captions_split() {
+    let mut r = ViRules::standard();
+    r.polish = false;
+    r.highlight = None;
+    let mut w = words("có khi là thằng sale đó là không hiểu rõ về cái nguyên tắc hoạt động của cái phần mềm lắm đúng", 0.0);
+    w.extend(words("không?", 6.75)); // a 0.8 s pause before it, as in the real interview
+    let t = texts(&w, &r);
+    assert!(t.iter().all(|c| c.split_whitespace().count() >= 3), "{t:?}");
+    let t = texts(&words("về sale mình nói chuyện với sale hay là về CS", 0.0), &r);
+    assert!(t.iter().all(|c| c.lines().all(|l| l.chars().count() <= r.max_line_chars)), "{t:?}");
+}
+
+/// A stretch of 60+ words with no pause is cut into even blocks first — never 40 words plus a
+/// one-word leftover ("không?").
+#[test]
+fn very_long_stretches_leave_no_leftover() {
+    let mut r = ViRules::standard();
+    r.polish = false;
+    r.highlight = None;
+    let text = ["anh nói em nghe cho kỹ rồi làm theo nhé"; 8].join(" ") + " không"; // 81 words = 2×40 + 1
+    let w = words(&text, 0.0);
+    assert_eq!(w.len(), 81);
+    let t = texts(&w, &r);
+    assert!(t.iter().all(|c| c.split_whitespace().count() >= 3), "{t:?}");
+}
