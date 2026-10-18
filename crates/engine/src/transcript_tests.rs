@@ -237,3 +237,32 @@ fn vietnamese_captions_replace_their_track_and_undo() {
     s.execute("edit.redo", json!({})).unwrap();
     assert_eq!(s.active_sequence().unwrap().caption_tracks.iter().filter(|t| t.name == "Phụ đề AYP").count(), 1);
 }
+
+/// AYP: the editor (a person, or Claude) groups captions by meaning; the tool times and checks them.
+#[test]
+fn editor_chunks_become_the_ayp_track() {
+    let (mut s, item, _) = session();
+    let sin = s.active_sequence().unwrap().audio_tracks[0].items[0].source_in;
+    let sec = |x: f64| (sin + Tick::from_seconds_f64(x)).0;
+    let words: Vec<_> = ["hôm", "nay", "mình", "nói", "về", "thất", "nghiệp", "nhé", "các", "bạn"]
+        .iter()
+        .enumerate()
+        .map(|(i, w)| json!({"text": w, "start": sec(0.2 + i as f64 * 0.3), "end": sec(0.45 + i as f64 * 0.3)}))
+        .collect();
+    s.execute("transcript.set", json!({"item": item.0, "transcript": {"language": "vi", "speakers": [], "words": words}})).unwrap();
+    let chunks = json!([{"from": 0, "text": "Hôm nay mình nói về thất / nghiệp nhé các bạn."}]);
+    // a broken rule is refused with its reason, and nothing changes
+    let e = s.execute("transcript.captionsFromChunks", json!({"chunks": chunks, "userRules": false})).unwrap_err().to_string();
+    assert!(e.contains("tách đôi \"thất nghiệp\"") && e.contains("ký tự"), "{e}");
+    assert!(s.active_sequence().unwrap().caption_tracks.is_empty());
+
+    let chunks = json!([{"from": 0, "text": "Hôm nay mình nói về"}, {"from": 5, "text": "thất nghiệp nhé / các bạn."}]);
+    let r = s.execute("transcript.captionsFromChunks", json!({"chunks": chunks, "userRules": false, "keywords": ["thất nghiệp"]})).unwrap();
+    assert_eq!((r["captions"].as_u64(), r["dropped"].as_array().map(Vec::len)), (Some(2), Some(0)), "{r}");
+    let q = s.active_sequence().unwrap();
+    let t = &q.caption_tracks[0];
+    assert_eq!(t.name, "Phụ đề AYP");
+    assert_eq!(t.captions[1].text, "<c #ffd200>thất nghiệp</c> nhé\ncác bạn.");
+    assert!(t.captions[0].start + t.captions[0].duration <= t.captions[1].start);
+    q.check().unwrap();
+}

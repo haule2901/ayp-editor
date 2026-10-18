@@ -890,5 +890,95 @@ pub fn polish_all(cues: &[(Tick, Tick, String)], r: &ViRules) -> Vec<String> {
     out
 }
 
+/// One caption an editor (a person, or Claude as the editor) grouped by meaning: `text` (lines
+/// split by `\n` or ` / `) is shown while words `from..=to` are heard.
+pub struct Chunk {
+    pub from: usize,
+    /// Last word heard; None = the word before the next chunk (the last word for the last chunk).
+    pub to: Option<usize>,
+    pub text: String,
+}
+
+/// Particles that never open a caption or a line ("vậy", "thôi"… can: "Vậy thì…").
+const NEVER_OPEN: &[&str] = &["ơi", "à", "ạ", "nhé", "nha", "nhỉ", "hả", "hở", "nè"];
+
+/// For each chunk, the words of its range its text doesn't show: dropped on purpose (a filler, a
+/// repeat) or by mistake. The editor reads them back.
+pub type Dropped = Vec<(usize, Vec<String>)>;
+
+/// Captions from chunks an editor grouped by meaning (rule #1: every caption is one meaningful
+/// chunk). The tool decides nothing about meaning: it times each chunk from its words and checks
+/// the layout rules. Every broken rule comes back (and nothing is laid out) so the editor fixes
+/// the chunk; the word count is the editor's call, since meaning outranks it.
+pub fn chunk_blocks(
+    words: &[SeqWord],
+    chunks: &[Chunk],
+    r: &ViRules,
+    base: &CaptionRules,
+    rate: FrameRate,
+) -> Result<(Vec<CaptionBlock>, Dropped), Vec<String>> {
+    let tail = Tick(TICKS_PER_SECOND * 3 / 10);
+    let (mut problems, mut blocks, mut dropped) = (Vec::new(), Vec::new(), Vec::new());
+    for (i, c) in chunks.iter().enumerate() {
+        let next = chunks.get(i + 1).map(|n| n.from);
+        let to = c.to.or(next.map(|n| n.saturating_sub(1))).unwrap_or(words.len().saturating_sub(1));
+        let lines: Vec<String> =
+            c.text.replace(" / ", "\n").split('\n').map(|l| l.split_whitespace().collect::<Vec<_>>().join(" ")).filter(|l| !l.is_empty()).collect();
+        let tag = format!("#{i} \"{}\"", lines.join(" / "));
+        let mut bad = |m: String| problems.push(format!("{tag}: {m}"));
+        if to < c.from || next.is_some_and(|n| n <= to) {
+            bad(format!("chữ {}–{to} ngược thứ tự hoặc chồng lên cụm sau", c.from));
+        }
+        if lines.is_empty() {
+            bad("không có chữ".into());
+            continue;
+        }
+        if lines.len() > 2 {
+            bad("quá 2 dòng".into());
+        }
+        for l in &lines {
+            let n = l.chars().count();
+            if r.max_line_chars > 0 && n > r.max_line_chars {
+                bad(format!("dòng \"{l}\" dài {n} ký tự (tối đa {})", r.max_line_chars));
+            }
+            if lines.len() > 1 && l.split(' ').count() < 2 {
+                bad(format!("dòng \"{l}\" chỉ có một chữ"));
+            }
+            if let Some(w) = l.split(' ').next()
+                && NEVER_OPEN.contains(&core(w).as_str())
+            {
+                bad(format!("tiểu từ \"{w}\" mở đầu dòng, nó thuộc câu trước"));
+            }
+        }
+        if let [a, b] = lines.as_slice() {
+            if a.chars().count() + 1 + b.chars().count() <= r.line_chars {
+                bad("vừa một dòng, không cần xuống dòng".into());
+            }
+            if let (Some(x), Some(y)) = (a.split(' ').next_back(), b.split(' ').next())
+                && unbreakable(x, y, r)
+            {
+                bad(format!("tách đôi \"{} {}\"", core(x), core(y)));
+            }
+        }
+        let (Some(first), Some(last)) = (words.get(c.from), words.get(to)) else {
+            problems.push(format!("{tag}: chữ {}–{to} nằm ngoài lời ({} chữ)", c.from, words.len()));
+            continue;
+        };
+        let shown: HashSet<String> = lines.iter().flat_map(|l| l.split(' ')).map(core).collect();
+        let miss: Vec<String> =
+            words.get(c.from..=to).unwrap_or_default().iter().map(|w| core(&w.text)).filter(|w| !w.is_empty() && !shown.contains(w)).collect();
+        if !miss.is_empty() {
+            dropped.push((i, miss));
+        }
+        let mut end = last.end + tail;
+        if let Some(n) = next.and_then(|n| words.get(n)) {
+            end = end.min(n.start).max(last.end);
+        }
+        let (start, end) = snap_span(first.start, end, rate);
+        blocks.push(CaptionBlock { start, end, text: highlight(&lines.join("\n"), r), speaker: first.speaker.clone(), words: c.from..to + 1 });
+    }
+    if problems.is_empty() { Ok((place_blocks(blocks, base, rate), dropped)) } else { Err(problems) }
+}
+
 #[cfg(test)]
 mod tests;

@@ -409,12 +409,9 @@ pub const AYP_TRACK: &str = "Phụ đề AYP";
 /// false` ignores it), on a track named [`AYP_TRACK`] that replaces the previous one, styled
 /// white with a black outline, raised above phone UI on a vertical frame.
 fn create_captions_vi(s: &mut Session, p: &Value) -> Result<Value> {
-    use filmcraft_edit::vi_captions::{ViRules, vi_caption_blocks};
+    use filmcraft_edit::vi_captions::vi_caption_blocks;
     let words = sequence_words(s);
-    let mut rules = match (bool_p(p, "userRules").unwrap_or(true), std::env::var_os("HOME")) {
-        (true, Some(home)) => ViRules::load_user(&std::path::Path::new(&home).join(".capcut-sub")),
-        _ => ViRules::standard(),
-    };
+    let mut rules = vi_rules(p);
     if let Some(n) = u64_p(p, "maxWords") {
         rules.max_words = usize::try_from(n.clamp(1, 30)).unwrap_or(10);
     }
@@ -432,16 +429,58 @@ fn create_captions_vi(s: &mut Session, p: &Value) -> Result<Value> {
             .take(500)
             .collect();
     }
-    if let Some(k) = p.get("keywords").and_then(Value::as_array) {
-        rules.keywords = k.iter().filter_map(Value::as_str).map(|w| w.trim().to_lowercase()).filter(|w| !w.is_empty()).take(200).collect();
-    }
     let blocks = vi_caption_blocks(&words, &rules, &CaptionRules::default(), s.sequence_rate());
     if blocks.is_empty() {
         return Err(bad("transcript.createCaptionsVi", "Không có câu nào để làm phụ đề"));
     }
-    let portrait = s.active_sequence().is_some_and(|q| q.settings.height > q.settings.width);
     let n = blocks.len();
-    let tid = s.edit_sequence("Phụ đề tiếng Việt (AYP)", |q, ctx, st| {
+    let tid = put_ayp_track(s, &blocks, &words)?;
+    Ok(json!({"track": tid.0, "captions": n}))
+}
+
+/// The user's caption rules (`~/.capcut-sub`, unless `userRules: false`) with `keywords`.
+fn vi_rules(p: &Value) -> filmcraft_edit::vi_captions::ViRules {
+    use filmcraft_edit::vi_captions::ViRules;
+    let mut rules = match (bool_p(p, "userRules").unwrap_or(true), std::env::var_os("HOME")) {
+        (true, Some(home)) => ViRules::load_user(&std::path::Path::new(&home).join(".capcut-sub")),
+        _ => ViRules::standard(),
+    };
+    if let Some(k) = p.get("keywords").and_then(Value::as_array) {
+        rules.keywords = k.iter().filter_map(Value::as_str).map(|w| w.trim().to_lowercase()).filter(|w| !w.is_empty()).take(200).collect();
+    }
+    rules
+}
+
+/// AYP: captions from chunks the editor (a person, or Claude) grouped by meaning:
+/// `chunks: [{from, to?, text}]` with word indices from `transcript.inspect`. The tool times and
+/// checks them; any broken layout rule fails the whole call with every problem listed.
+fn captions_from_chunks(s: &mut Session, p: &Value) -> Result<Value> {
+    use filmcraft_edit::vi_captions::{Chunk, chunk_blocks};
+    const CMD: &str = "transcript.captionsFromChunks";
+    let list = p.get("chunks").and_then(Value::as_array).ok_or_else(|| bad(CMD, "chunks: [{from, to?, text}] is required"))?;
+    if list.is_empty() || list.len() > 5000 {
+        return Err(bad(CMD, "chunks: 1–5000 chunks"));
+    }
+    let mut chunks = Vec::with_capacity(list.len());
+    for (i, c) in list.iter().enumerate() {
+        let idx = |k: &str| c.get(k).and_then(Value::as_u64).and_then(|n| usize::try_from(n).ok());
+        let (Some(from), Some(text)) = (idx("from"), c.get("text").and_then(Value::as_str)) else {
+            return Err(bad(CMD, format!("chunk #{i}: needs from (word index) and text")));
+        };
+        chunks.push(Chunk { from, to: idx("to"), text: text.to_string() });
+    }
+    let words = sequence_words(s);
+    let rules = vi_rules(p);
+    let (blocks, dropped) = chunk_blocks(&words, &chunks, &rules, &CaptionRules::default(), s.sequence_rate()).map_err(|e| bad(CMD, e.join("\n")))?;
+    let n = blocks.len();
+    let tid = put_ayp_track(s, &blocks, &words)?;
+    Ok(json!({"track": tid.0, "captions": n, "dropped": dropped.iter().map(|(i, w)| json!({"chunk": i, "words": w})).collect::<Vec<_>>()}))
+}
+
+/// Replace the AYP caption track with `blocks`, keeping its style (a preset the user applied).
+fn put_ayp_track(s: &mut Session, blocks: &[tx::CaptionBlock], words: &[SeqWord]) -> Result<TrackId> {
+    let portrait = s.active_sequence().is_some_and(|q| q.settings.height > q.settings.width);
+    s.edit_sequence("Phụ đề tiếng Việt (AYP)", |q, ctx, st| {
         // re-creating keeps the style of the track it replaces (a preset the user applied)
         let kept = q.caption_tracks.iter().find(|t| t.name == AYP_TRACK).map(|t| t.style.clone());
         q.caption_tracks.retain(|t| t.name != AYP_TRACK);
@@ -460,12 +499,11 @@ fn create_captions_vi(s: &mut Session, p: &Value) -> Result<Value> {
         if let Some(k) = kept {
             t.style = k;
         }
-        t.captions = tx::blocks_to_captions(&blocks, &words, ctx);
+        t.captions = tx::blocks_to_captions(blocks, words, ctx);
         q.caption_tracks.insert(0, t);
         st.caption_selection.clear();
         Ok(tid)
-    })?;
-    Ok(json!({"track": tid.0, "captions": n}))
+    })
 }
 
 fn models(_: &mut Session, _: &Value) -> Result<Value> {
@@ -563,6 +601,15 @@ pub fn commands() -> Vec<CommandSpec> {
             r#"{"maxWords":1..30?,"polish":bool?,"userRules":bool?,"keywords":[str]?,"replace":[[str,str]]?}"#,
             has_transcript,
             create_captions_vi,
+            true,
+        ),
+        spec(
+            "transcript.captionsFromChunks",
+            "Phụ đề theo cụm của biên tập viên (AYP)",
+            &["Sequence", "Transcript"],
+            r#"{"chunks":[{"from":n,"to":n?,"text":str}],"keywords":[str]?,"userRules":bool?}"#,
+            has_transcript,
+            captions_from_chunks,
             true,
         ),
     ]

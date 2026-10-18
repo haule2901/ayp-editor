@@ -459,3 +459,37 @@ fn a_capitalised_word_starts_a_new_caption() {
     let t = texts(&words("Còn những nhân viên mới vô thì có tinh thần phấn đấu Em mới vô một tháng không biết có được ở lại làm hay", 0.0), &r);
     assert!(t.iter().all(|c| !c.to_lowercase().replace('\n', " ").contains("đấu em")), "{t:?}");
 }
+
+#[test]
+fn editor_chunks_are_timed_and_checked() {
+    let mut r = ViRules::standard();
+    r.highlight = None;
+    let w = words("phấn đấu em mới vô một tháng không biết có được ở lại làm không", 0.0);
+    let ok = [
+        Chunk { from: 0, to: Some(1), text: "Phấn đấu.".into() },
+        Chunk { from: 2, to: None, text: "Em mới vô một tháng,".into() },
+        Chunk { from: 7, to: None, text: "không biết có được / ở lại làm không?".into() },
+    ];
+    let (blocks, dropped) = chunk_blocks(&w, &ok, &r, &CaptionRules::default(), R).unwrap();
+    let texts: Vec<&str> = blocks.iter().map(|b| b.text.as_str()).collect();
+    assert_eq!(texts, ["Phấn đấu.", "Em mới vô một tháng,", "không biết có được\nở lại làm không?"]);
+    assert_eq!(blocks.iter().map(|b| b.words.clone()).collect::<Vec<_>>(), [0..2, 2..7, 7..15]);
+    assert!(blocks.windows(2).all(|p| p[0].end <= p[1].start), "no overlap");
+    assert_eq!(blocks[1].start, R.snap(w[2].start));
+    assert!(dropped.is_empty(), "{dropped:?}");
+    // every broken rule comes back, and nothing is laid out
+    let bad = [
+        Chunk { from: 0, to: None, text: "phấn đấu em / mới".into() },
+        Chunk { from: 4, to: None, text: "vô một tháng không biết có được ở lại".into() },
+        Chunk { from: 3, to: None, text: "làm / không".into() },
+    ];
+    let p = chunk_blocks(&w, &bad, &r, &CaptionRules::default(), R).unwrap_err();
+    assert!(p.iter().any(|m| m.starts_with("#0") && m.contains("một chữ")), "{p:?}");
+    assert!(p.iter().any(|m| m.starts_with("#1") && m.contains("ký tự")), "{p:?}");
+    assert!(p.iter().any(|m| m.starts_with("#1") && m.contains("chồng")), "{p:?}");
+    let split = [Chunk { from: 0, to: None, text: "phấn / đấu em mới vô một tháng không biết".into() }];
+    assert!(chunk_blocks(&w, &split, &r, &CaptionRules::default(), R).unwrap_err().iter().any(|m| m.contains("tách đôi \"phấn đấu\"")));
+    // words the text leaves out are reported for the editor to check
+    let short = [Chunk { from: 0, to: Some(6), text: "Em mới vô một tháng".into() }];
+    assert_eq!(chunk_blocks(&w, &short, &r, &CaptionRules::default(), R).unwrap().1, [(0, vec!["phấn".to_string(), "đấu".to_string()])]);
+}
