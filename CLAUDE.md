@@ -28,7 +28,8 @@ FilmCraft is a clean-room, open-source, pure-Rust non-linear video editor target
 - Test fixtures: generate with ffmpeg into `target/fixtures/` (never commit media). See [`docs/testing.md`](docs/testing.md).
 
 ## AYP caption rules (this fork)
-Vietnamese captions (`crates/edit/src/vi_captions.rs`, command `transcript.createCaptionsVi`) follow the owner's standard: *every element placed has a meaning* — captions should read like a finished product. Any change must keep these, each guarded by a test in `crates/edit/src/vi_captions/tests.rs`:
+Vietnamese captions (`crates/edit/src/vi_captions.rs`, command `transcript.createCaptionsVi`) follow the owner's standard: *every element placed has a meaning* — captions should read like a finished product.
+**Rule #1: every caption that appears on screen is one meaningful chunk** — never the tail of one sentence glued to the head of the next. The rules below approximate this; when they can't (no punctuation from the ASR), a human or AI pass groups captions by meaning. Any change must keep these, each guarded by a test in `crates/edit/src/vi_captions/tests.rs`:
 - 6–10 words a caption, one complete idea; a one- or two-word sentence joins the caption before it (`captions_hold_six_to_ten_words`, `tiny_sentences_join_the_previous_caption`).
 - A caption that fits one line (21 characters at size 48, vertical) is not broken; two lines are balanced; **a line never holds a single word** (`no_lonely_word_and_no_needless_break`).
 - Never split a compound (built-in list + Wiktionary, CC BY-SA), a number from its unit, a keyword phrase, or an English phrase like "lay off" (`english_phrases_stay_whole`, `everyday_compounds_are_known`, `keywords_and_number_words_are_never_split`).

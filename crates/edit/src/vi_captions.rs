@@ -307,7 +307,7 @@ fn break_cost(a: &SeqWord, b: &SeqWord, r: &ViRules) -> i64 {
     // "phấn đấu Em mới vô…": a common word the ASR capitalised mid-text starts a sentence even
     // without a full stop (names are not common words, so they don't count)
     if b.text.chars().next().is_some_and(char::is_uppercase) && r.common.contains(&core(&b.text)) && !ends_sentence(&a.text) {
-        c -= 60;
+        c -= 150;
     }
     if PARTICLES.contains(&core(&b.text).as_str()) {
         c += 150; // "ơi The fact…": a particle never opens a caption
