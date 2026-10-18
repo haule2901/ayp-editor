@@ -268,3 +268,68 @@ fn captions_keep_word_timings() {
     assert_eq!(got[3].1, w[4].start);
     assert!(c.words.iter().all(|x| x.start >= Tick::ZERO && x.end <= c.duration));
 }
+
+// ---- AYP: phụ đề "chuẩn Apple": mỗi dòng có nghĩa, cân, không chữ trơ ----
+
+/// "thì nếu mà mình / đợi": a caption that fits one line stays one line, and a line never
+/// holds a single word.
+#[test]
+fn no_lonely_word_and_no_needless_break() {
+    let r = ViRules::standard();
+    assert_eq!(break_lines("thì nếu mà mình đợi", &r), "thì nếu mà mình đợi");
+    for t in ["Các bạn có nhớ cái anh có nói", "khi nào sẽ layoff tiếp anh ơi vậy", "anh không dám trả lời vì anh không biết"] {
+        let b = break_lines(t, &r);
+        assert!(b.lines().all(|l| l.split(' ').count() >= 2), "{b}");
+        assert!(b.lines().all(|l| l.chars().count() <= r.max_line_chars), "{b}");
+    }
+}
+
+/// Lines break where a clause starts ("nếu", "thì", "mà", "vì", "để", "nhưng"…).
+#[test]
+fn lines_break_before_a_clause() {
+    let r = ViRules::standard();
+    assert_eq!(break_lines("phải trả lời sao nếu mình không biết", &r), "phải trả lời sao\nnếu mình không biết");
+}
+
+/// 6–10 words a caption: short pieces of one sentence are joined, long ones split evenly.
+#[test]
+fn captions_hold_six_to_ten_words() {
+    let mut r = ViRules::standard();
+    r.polish = false;
+    r.highlight = None;
+    r.line_chars = 0;
+    r.max_line_chars = 0;
+    // two short pieces of one sentence with a 0.8 s breath between them
+    let mut w = words("thì nếu mà mình đợi", 0.0);
+    w.extend(words("những cái thói quen cũ", 2.3));
+    assert_eq!(texts(&w, &r), ["Thì nếu mà mình đợi những cái thói quen cũ"]);
+    // a long phrase: every caption 6..=10 words
+    let long = words("cho nên là trả lời một câu là có là không thì anh không dám trả lời làm sao mà dám chắc được là sẽ không sao", 0.0);
+    let t = texts(&long, &r);
+    assert!(t.iter().all(|c| (6..=10).contains(&c.split(' ').count())), "{t:?}");
+}
+
+/// "Khi nào sẽ lay / off tiếp anh?": an English phrase is one unit.
+#[test]
+fn english_phrases_stay_whole() {
+    let mut r = ViRules::standard();
+    r.polish = false;
+    r.highlight = None;
+    r.max_words = 4;
+    let t = texts(&words("khi nào sẽ lay off tiếp anh nhỉ", 0.0), &r);
+    assert!(t.iter().all(|c| !c.ends_with("lay") && !c.contains("lay\n")), "{t:?}");
+}
+
+/// ASR fixes are applied before lines are broken, so a fix never overflows a line.
+#[test]
+fn replacements_come_before_line_breaks() {
+    let mut r = ViRules::standard();
+    r.polish = false;
+    r.highlight = None;
+    r.replacements = vec![("lay up".into(), "layoff".into()), ("hiệu sức công".into(), "hiệu suất công việc".into())];
+    let t = texts(&words("để mình tăng hiệu sức công của mình", 0.0), &r);
+    assert!(t.iter().all(|c| c.lines().all(|l| l.chars().count() <= r.max_line_chars && l.split(' ').count() >= 2)), "{t:?}");
+    assert!(t.join(" ").replace('\n', " ").contains("hiệu suất công việc"), "{t:?}");
+    let t = texts(&words("còn có lay up nữa không", 0.0), &r);
+    assert!(t.concat().contains("layoff"), "{t:?}");
+}

@@ -213,6 +213,11 @@ fn vietnamese_captions_replace_their_track_and_undo() {
 
     // AYP: re-creating keeps the track's style (a preset the user applied)
     s.execute("captions.setStyle", json!({"track": "C1", "highlight": "karaoke"})).unwrap();
+    // ASR fixes from the caller ("replace": [[heard, meant]])
+    s.execute("transcript.createCaptionsVi", json!({"userRules": false, "replace": [["người ta", "mọi người"]]})).unwrap();
+    let q = s.active_sequence().unwrap();
+    assert!(q.caption_tracks[0].captions.iter().any(|c| c.plain_lines().join(" ").contains("mọi người")), "replace applied");
+
     s.execute("transcript.createCaptionsVi", json!({"maxWords": 4, "userRules": false})).unwrap();
     let q = s.active_sequence().unwrap();
     assert_eq!(q.caption_tracks.iter().filter(|t| t.name == "Phụ đề AYP").count(), 1, "replaced, not stacked");
@@ -225,6 +230,7 @@ fn vietnamese_captions_replace_their_track_and_undo() {
     s.execute("edit.undo", json!({})).unwrap();
     s.execute("edit.undo", json!({})).unwrap();
 
+    s.execute("edit.undo", json!({})).unwrap();
     s.execute("edit.undo", json!({})).unwrap();
     s.execute("edit.undo", json!({})).unwrap();
     assert!(s.active_sequence().unwrap().caption_tracks.iter().all(|t| t.name != "Phụ đề AYP"));

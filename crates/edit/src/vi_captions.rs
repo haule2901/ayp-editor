@@ -81,6 +81,10 @@ pub struct ViRules {
     pub highlight: Option<String>,
     /// Words or phrases to colour (lower case, matched whole).
     pub keywords: Vec<String>,
+    /// Fewest words a caption should have: shorter pieces of one sentence are joined.
+    pub min_words: usize,
+    /// ASR fixes `(heard, meant)`, whole words, case-insensitive, applied before lines are broken.
+    pub replacements: Vec<(String, String)>,
 }
 
 fn set(words: &[&str]) -> HashSet<String> {
@@ -101,7 +105,7 @@ impl ViRules {
         add_syllables(&mut common, &compounds);
         let gap = Tick(TICKS_PER_SECOND / 10 * 6);
         Self {
-            max_words: 8,
+            max_words: 10,
             max_gap: gap,
             remove_fillers: true,
             polish: true,
@@ -110,10 +114,12 @@ impl ViRules {
             common,
             filler_always: set(FILLER_ALWAYS),
             filler_non_final: set(FILLER_NON_FINAL),
-            line_chars: 18,
+            line_chars: 21,
             max_line_chars: 21,
             highlight: Some("#ffd200".into()),
             keywords: Vec::new(),
+            min_words: 6,
+            replacements: Vec::new(),
         }
     }
 
@@ -232,10 +238,29 @@ fn is_number_unit(a: &str, b: &str) -> bool {
     (ca.chars().any(|c| c.is_ascii_digit()) || NUMBER_WORDS.contains(&ca.as_str())) && UNITS.contains(&core(b).as_str())
 }
 
-/// `a b` must stay together: a compound, a number and its unit, or inside a keyword phrase.
+/// English phrases speakers mix in: never split ("lay off", "follow up"…).
+const EN_PHRASES: &[&str] = &[
+    "lay off",
+    "lay up",
+    "follow up",
+    "next step",
+    "wake up",
+    "feedback loop",
+    "business focus",
+    "line manager",
+    "public speaking",
+    "career navigation",
+    "check gpt",
+];
+/// Words that open a clause: the best place for a line to start.
+const CLAUSE_START: &[&str] = &["nếu", "thì", "mà", "vì", "để", "nhưng", "nên", "khi", "còn", "rồi", "tại", "bởi", "hay", "hoặc", "và", "cho"];
+
+/// `a b` must stay together: a compound, a number and its unit, an English phrase, or inside a
+/// keyword phrase.
 fn unbreakable(a: &str, b: &str, r: &ViRules) -> bool {
     let pair = format!("{} {}", core(a), core(b));
-    r.compounds.contains(&pair)
+    EN_PHRASES.contains(&pair.as_str())
+        || r.compounds.contains(&pair)
         || is_number_unit(a, b)
         || r.keywords.iter().any(|k| {
             let ws: Vec<&str> = k.split_whitespace().collect();
@@ -343,6 +368,11 @@ fn split_phrase(p: &[usize], words: &[SeqWord], r: &ViRules, max_words: usize) -
 /// Lay the sequence transcript out as Vietnamese captions (see the module docs). Times are
 /// snapped to frames and placed with `base` (gap frames, minimum duration).
 pub fn vi_caption_blocks(words: &[SeqWord], r: &ViRules, base: &CaptionRules, rate: FrameRate) -> Vec<CaptionBlock> {
+    // ASR fixes first, so every length decision below sees the final text. Same number of words
+    // (a fixed phrase lives on its first word, the others become empty and are skipped), so block
+    // word ranges still index the caller's words.
+    let fixed = replace_in_words(words, r);
+    let words = fixed.as_slice();
     let max_words = r.max_words.max(1);
     let mask = hallucination_mask(words);
     let spoken: Vec<usize> = (0..words.len()).filter(|&i| mask.get(i).copied().unwrap_or(false)).collect();
@@ -386,7 +416,26 @@ pub fn vi_caption_blocks(words: &[SeqWord], r: &ViRules, base: &CaptionRules, ra
     if !current.is_empty() {
         phrases.push(current);
     }
-    let groups: Vec<Vec<usize>> = phrases.iter().flat_map(|p| split_phrase(p, words, r, max_words)).collect();
+    // short pieces of one sentence (a breath under 1.5 s, no cut) are joined up to max_words
+    let mut joined: Vec<Vec<usize>> = Vec::with_capacity(phrases.len());
+    for p in phrases {
+        let merge = match (joined.last(), p.first().and_then(|&i| words.get(i))) {
+            (Some(prev), Some(first)) => prev.last().and_then(|&l| words.get(l)).is_some_and(|last| {
+                let stutter = first.item == last.item && first.index > last.index && first.index - last.index <= 5;
+                let same = first.clip == last.clip || stutter;
+                same && !ends_sentence(&last.text)
+                    && first.start - last.end < Tick(TICKS_PER_SECOND * 3 / 2)
+                    && (prev.len() < r.min_words || p.len() < r.min_words)
+                    && prev.len() + p.len() <= max_words
+            }),
+            _ => false,
+        };
+        match joined.last_mut() {
+            Some(prev) if merge => prev.extend(p),
+            _ => joined.push(p),
+        }
+    }
+    let groups: Vec<Vec<usize>> = joined.iter().flat_map(|p| split_phrase(p, words, r, max_words)).collect();
     // 3) text (capitalised at sentence starts), times; a short gap is bridged so text doesn't blink
     let bridge = Tick(TICKS_PER_SECOND / 10 * 3);
     let mut spans: Vec<(Tick, Tick, String, std::ops::Range<usize>, Option<String>)> = Vec::with_capacity(groups.len());
@@ -452,8 +501,11 @@ pub fn break_lines(text: &str, r: &ViRules) -> String {
         if last.ends_with([',', '.', '!', '?', '…', ':', ';']) {
             score -= 8;
         }
-        if b.len() == 1 {
-            score += 12; // no orphan word on the second line
+        if a.len() == 1 || b.len() == 1 {
+            score += 250; // a line never holds a single word
+        }
+        if CLAUSE_START.contains(&core(first).as_str()) {
+            score -= 12; // a line starts where a clause starts
         }
         if r.max_line_chars > 0 && (len(a) > r.max_line_chars || len(b) > r.max_line_chars) {
             score += 300; // the renderer would wrap it again
@@ -466,6 +518,42 @@ pub fn break_lines(text: &str, r: &ViRules) -> String {
         Some((_, k)) => format!("{}\n{}", words.get(..k).unwrap_or_default().join(" "), words.get(k..).unwrap_or_default().join(" ")),
         None => text.to_string(),
     }
+}
+
+/// The rule's ASR fixes `(heard, meant)`, matched on whole words (punctuation and case ignored;
+/// the punctuation after the last word is kept), applied to the transcript words (see
+/// [`vi_caption_blocks`]).
+fn replace_in_words(words: &[SeqWord], r: &ViRules) -> Vec<SeqWord> {
+    let mut out = words.to_vec();
+    for (from, to) in &r.replacements {
+        let pat: Vec<String> = from.split_whitespace().map(core).collect();
+        if pat.is_empty() || pat.iter().all(String::is_empty) || to.trim().is_empty() {
+            continue;
+        }
+        let mut i = 0;
+        while i + pat.len() <= out.len() {
+            let hit = out.get(i..i + pat.len()).is_some_and(|w| w.iter().map(|t| core(&t.text)).eq(pat.iter().cloned()));
+            if !hit {
+                i += 1;
+                continue;
+            }
+            let suf = out.get(i + pat.len() - 1).map(|t| split(&t.text).suf).unwrap_or_default();
+            let upper = out.get(i).and_then(|t| t.text.chars().next()).is_some_and(char::is_uppercase);
+            let end = out.get(i + pat.len() - 1).map(|w| w.end);
+            if let Some(first) = out.get_mut(i) {
+                let t = to.trim();
+                first.text = format!("{}{suf}", if upper { capitalize(t) } else { t.to_string() });
+                if let Some(e) = end {
+                    first.end = e;
+                }
+            }
+            for w in out.iter_mut().skip(i + 1).take(pat.len() - 1) {
+                w.text = String::new();
+            }
+            i += pat.len();
+        }
+    }
+    out
 }
 
 /// Colour numbers with their unit ("4 triệu", "50%") and the rule's keywords with

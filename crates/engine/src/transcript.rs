@@ -416,10 +416,21 @@ fn create_captions_vi(s: &mut Session, p: &Value) -> Result<Value> {
         _ => ViRules::standard(),
     };
     if let Some(n) = u64_p(p, "maxWords") {
-        rules.max_words = usize::try_from(n.clamp(1, 30)).unwrap_or(8);
+        rules.max_words = usize::try_from(n.clamp(1, 30)).unwrap_or(10);
     }
     if let Some(b) = bool_p(p, "polish") {
         rules.polish = b;
+    }
+    if let Some(list) = p.get("replace").and_then(Value::as_array) {
+        rules.replacements = list
+            .iter()
+            .filter_map(|x| {
+                let pair = x.as_array()?;
+                Some((pair.first()?.as_str()?.trim().to_string(), pair.get(1)?.as_str()?.trim().to_string()))
+            })
+            .filter(|(a, b)| !a.is_empty() && !b.is_empty())
+            .take(500)
+            .collect();
     }
     if let Some(k) = p.get("keywords").and_then(Value::as_array) {
         rules.keywords = k.iter().filter_map(Value::as_str).map(|w| w.trim().to_lowercase()).filter(|w| !w.is_empty()).take(200).collect();
@@ -549,7 +560,7 @@ pub fn commands() -> Vec<CommandSpec> {
             "transcript.createCaptionsVi",
             "Phụ đề tiếng Việt (AYP)…",
             &["Sequence", "Transcript"],
-            r#"{"maxWords":1..30?,"polish":bool?,"userRules":bool?,"keywords":[str]?}"#,
+            r#"{"maxWords":1..30?,"polish":bool?,"userRules":bool?,"keywords":[str]?,"replace":[[str,str]]?}"#,
             has_transcript,
             create_captions_vi,
             true,
