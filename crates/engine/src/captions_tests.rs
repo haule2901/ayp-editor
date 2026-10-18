@@ -176,3 +176,16 @@ fn caption_highlight_style() {
     s.execute("edit.undo", json!({})).unwrap();
     assert_eq!(s.active_sequence().unwrap().caption_tracks[0].style.highlight, CaptionHighlight::Karaoke);
 }
+
+/// AYP: drop shadow settings (CapCut shadow_*), clamped.
+#[test]
+fn caption_shadow_style() {
+    let mut s = demo();
+    s.execute("captions.newTrack", json!({})).unwrap();
+    s.execute("captions.setStyle", json!({"shadow": true, "shadowColor": "#000000aa", "shadowAngle": -30, "shadowDistance": 999, "shadowSmoothing": -4}))
+        .unwrap();
+    let st = s.active_sequence().unwrap().caption_tracks[0].style.clone();
+    assert_eq!((st.shadow, st.shadow_color, st.shadow_angle, st.shadow_distance, st.shadow_smoothing), (true, [0, 0, 0, 0xaa], -30.0, 100.0, 0.0));
+    let l = s.execute("captions.list", json!({})).unwrap();
+    assert_eq!(l["tracks"][0]["style"]["shadow"], true, "{l}");
+}

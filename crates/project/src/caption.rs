@@ -121,6 +121,17 @@ pub struct CaptionStyle {
     pub highlight_color: [u8; 4],
     /// AYP: size of the word being said relative to the others (1 = same size).
     pub highlight_scale: f32,
+    /// AYP: drop shadow behind text, outline and box (CapCut `has_shadow`).
+    pub shadow: bool,
+    /// AYP: shadow colour, sRGB + alpha (CapCut `shadow_color` + `shadow_alpha`).
+    pub shadow_color: [u8; 4],
+    /// AYP: direction the shadow falls, degrees counter-clockwise from the right (-45 = down
+    /// right, CapCut `shadow_angle`).
+    pub shadow_angle: f32,
+    /// AYP: shadow offset in pixels at 1080 lines (CapCut `shadow_distance`).
+    pub shadow_distance: f32,
+    /// AYP: shadow softness (blur) in pixels at 1080 lines (CapCut `shadow_smoothing`).
+    pub shadow_smoothing: f32,
 }
 
 impl Default for CaptionStyle {
@@ -140,6 +151,11 @@ impl Default for CaptionStyle {
             highlight: CaptionHighlight::None,
             highlight_color: [255, 210, 0, 255],
             highlight_scale: 1.0,
+            shadow: false,
+            shadow_color: [0, 0, 0, 160],
+            shadow_angle: -45.0,
+            shadow_distance: 5.0,
+            shadow_smoothing: 6.0,
         }
     }
 }

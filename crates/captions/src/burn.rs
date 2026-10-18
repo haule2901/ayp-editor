@@ -313,7 +313,13 @@ pub fn render_caption_at(c: &Caption, style: &CaptionStyle, t: Tick, w: usize, h
         })
         .collect();
     let outline = (style.outline * scale).max(0.0);
-    let grow = outline.ceil() + 1.0;
+    // AYP: drop shadow offset and softness; the overlay grows to hold it
+    let finite = |v: f32, hi: f32| if v.is_finite() { v.clamp(0.0, hi) } else { 0.0 };
+    let (s_dist, s_soft) = (finite(style.shadow_distance, 200.0) * scale, finite(style.shadow_smoothing, 100.0) * scale);
+    let s_angle = if style.shadow_angle.is_finite() { style.shadow_angle.to_radians() } else { 0.0 };
+    let (s_dx, s_dy) = (s_angle.cos() * s_dist, -s_angle.sin() * s_dist);
+    let shadow_pad = if style.shadow { (s_dist + s_soft).ceil() + 1.0 } else { 0.0 };
+    let grow = outline.ceil() + 1.0 + shadow_pad;
     // a bigger highlighted word may rise above its line box
     let vgrow = grow + ((hl_scale - 1.0).max(0.0) * asc).ceil();
     let bx0 = xs.iter().zip(&widths).map(|(x, _)| x - pad_x - grow).fold(f32::MAX, f32::min).floor();
@@ -373,7 +379,24 @@ pub fn render_caption_at(c: &Caption, style: &CaptionStyle, t: Tick, w: usize, h
     let union: Vec<f32> =
         if coloured.is_empty() { Vec::new() } else { (0..ow * oh).map(|j| coloured.iter().fold(cover[j], |a, (_, m)| a.max(m[j]))).collect() };
     let stroke = if outline > 0.0 { dilate(if union.is_empty() { &cover } else { &union }, ow, oh, outline) } else { Vec::new() };
+    // AYP: the shadow is everything drawn (box, outline, text), moved and softened
+    let shadow = if style.shadow && style.shadow_color[3] > 0 {
+        let a: Vec<f32> = (0..ow * oh)
+            .map(|j| {
+                let mut v = cover[j].max(bg[j]).max(union.get(j).copied().unwrap_or(0.0));
+                if let Some(x) = stroke.get(j) {
+                    v = v.max(*x);
+                }
+                v
+            })
+            .collect();
+        let m = filmcraft_text::mask::offset(&filmcraft_text::Mask { w: ow, h: oh, a }, s_dx.round() as i32, s_dy.round() as i32);
+        filmcraft_text::mask::blur(&m, s_soft / 3.0).a
+    } else {
+        Vec::new()
+    };
     let (tc, bc, oc) = (lin(style.color), lin(style.background_color), lin(style.outline_color));
+    let sc = lin(style.shadow_color);
     let mut out = vec![0.0f32; ow * oh * 4];
     for j in 0..ow * oh {
         let mut p = [0.0f32; 4];
@@ -384,6 +407,9 @@ pub fn render_caption_at(c: &Caption, style: &CaptionStyle, t: Tick, w: usize, h
                 }
             }
         };
+        if let Some(a) = shadow.get(j) {
+            over(&mut p, sc, *a);
+        }
         over(&mut p, bc, bg[j]);
         if !stroke.is_empty() {
             over(&mut p, oc, stroke[j]);
@@ -613,6 +639,40 @@ mod tests {
         let big = CaptionStyle { highlight_scale: 1.5, ..st.clone() };
         let (a, b) = (render_caption_at(&timed_cap(), &st, Tick(60), 1280, 720).unwrap(), render_caption_at(&timed_cap(), &big, Tick(60), 1280, 720).unwrap());
         assert!(b.w > a.w + 20, "{} {}", a.w, b.w);
+    }
+
+    /// Centroid of the pixels matching `f`.
+    fn centroid(o: &Overlay, f: impl Fn(&[f32]) -> bool) -> (f32, f32, usize) {
+        let (mut sx, mut sy, mut n) = (0.0, 0.0, 0usize);
+        for (i, p) in o.px.chunks(4).enumerate() {
+            if f(p) {
+                sx += (i % o.w) as f32;
+                sy += (i / o.w) as f32;
+                n += 1;
+            }
+        }
+        (sx / n.max(1) as f32, sy / n.max(1) as f32, n)
+    }
+
+    /// AYP: a drop shadow (CapCut shadow_*) sits down and to the right of the text at -45°.
+    #[test]
+    fn drop_shadow_falls_down_right() {
+        let plain = CaptionStyle { background: false, size: 120.0, ..Default::default() };
+        let st =
+            CaptionStyle { shadow: true, shadow_color: [255, 0, 0, 255], shadow_angle: -45.0, shadow_distance: 12.0, shadow_smoothing: 0.0, ..plain.clone() };
+        let red = |p: &[f32]| p[3] > 0.9 && p[0] > 0.5 && p[1] < 0.1;
+        let white = |p: &[f32]| p[3] > 0.9 && p[0] > 0.9 && p[1] > 0.9;
+        assert_eq!(centroid(&render_caption(&cap("Shadow"), &plain, 1920, 1080).unwrap(), red).2, 0);
+        let o = render_caption(&cap("Shadow"), &st, 1920, 1080).unwrap();
+        let (rx, ry, rn) = centroid(&o, red);
+        let (wx, wy, _) = centroid(&o, white);
+        assert!(rn > 200 && rx > wx + 3.0 && ry > wy + 3.0, "red {rx},{ry} ({rn}) white {wx},{wy}");
+        // a soft shadow spreads (partly transparent pixels) and stays inside the overlay
+        let soft = CaptionStyle { shadow_smoothing: 10.0, ..st };
+        let o = render_caption(&cap("Shadow"), &soft, 1920, 1080).unwrap();
+        assert!(o.px.chunks(4).any(|p| p[3] > 0.05 && p[3] < 0.5 && p[0] > p[1]));
+        let edge = |x: usize, y: usize| o.px[(y * o.w + x) * 4 + 3];
+        assert!((0..o.h).all(|y| edge(o.w - 1, y) < 0.05), "shadow cut at the right edge");
     }
 
     #[test]
