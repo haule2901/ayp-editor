@@ -270,6 +270,9 @@ const EN_PHRASES: &[&str] = &[
     "career navigation",
     "check gpt",
 ];
+/// Sentence-final particles: they end what was said before them, so they never open a caption or
+/// a line, and the place right after them is a good break.
+const PARTICLES: &[&str] = &["ơi", "à", "ạ", "nhé", "nha", "nhỉ", "hả", "hở", "nè", "đấy", "hen", "ha", "chứ", "vậy", "thôi"];
 /// Words that open a clause: the best place for a line to start.
 const CLAUSE_START: &[&str] = &["nếu", "thì", "mà", "vì", "để", "nhưng", "nên", "khi", "còn", "rồi", "tại", "bởi", "hay", "hoặc", "và", "cho"];
 
@@ -300,6 +303,11 @@ fn break_cost(a: &SeqWord, b: &SeqWord, r: &ViRules) -> i64 {
     }
     if a.text.ends_with([',', ';', ':']) {
         c -= 30;
+    }
+    if PARTICLES.contains(&core(&b.text).as_str()) {
+        c += 150; // "ơi The fact…": a particle never opens a caption
+    } else if PARTICLES.contains(&ca.as_str()) {
+        c -= 15;
     }
     if b.start - a.end >= Tick(TICKS_PER_SECOND / 4) {
         c -= 30;
@@ -538,6 +546,9 @@ fn best_break(words: &[&str], r: &ViRules) -> Option<(i64, usize)> {
         }
         if CLAUSE_START.contains(&core(first).as_str()) {
             score -= 12; // a line starts where a clause starts
+        }
+        if PARTICLES.contains(&core(first).as_str()) {
+            score += 150; // a particle never opens a line
         }
         if r.max_line_chars > 0 && (len(a) > r.max_line_chars || len(b) > r.max_line_chars) {
             score += 300; // the renderer would wrap it again

@@ -385,3 +385,20 @@ fn caption_numbers_come_from_config() {
     assert_eq!((r.min_words, r.max_line_chars), (d.min_words, d.max_line_chars));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// "ơi The fact là gì?": a sentence-final particle (ơi, à, nhé, ạ, hả…) belongs to the words
+/// before it — it never opens a caption or a line.
+#[test]
+fn particles_stay_with_what_they_end() {
+    let mut r = ViRules::standard();
+    r.polish = false;
+    r.highlight = None;
+    let t = texts(&words("Hỏi là rốt cuộc ty sắp tới Hơn có lay off nữa không anh ơi The fact là gì?", 0.0), &r);
+    for c in &t {
+        for l in c.lines() {
+            let first = l.split(' ').next().unwrap_or("").to_lowercase();
+            assert!(!["ơi", "à", "nhé", "nha", "ạ", "hả", "nhỉ"].contains(&first.as_str()), "{t:?}");
+        }
+    }
+    assert_eq!(break_lines("sắp tới còn layoff không anh ơi", &r).lines().last().map(|l| l.starts_with("ơi")), Some(false));
+}

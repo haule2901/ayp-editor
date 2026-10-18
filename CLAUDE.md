@@ -34,5 +34,6 @@ Vietnamese captions (`crates/edit/src/vi_captions.rs`, command `transcript.creat
 - Never split a compound (built-in list + Wiktionary, CC BY-SA), a number from its unit, a keyword phrase, or an English phrase like "lay off" (`english_phrases_stay_whole`, `everyday_compounds_are_known`, `keywords_and_number_words_are_never_split`).
 - Lines start where a clause starts (nếu/thì/mà/vì/để/nhưng…) (`lines_break_before_a_clause`); captions are cut where their lines read well (`captions_are_cut_where_their_lines_read_well`).
 - ASR fixes (`replace`) are applied before any length decision (`replacements_come_before_line_breaks`).
+- A sentence-final particle (ơi, à, ạ, nhé, nha, nhỉ, hả, nè…) stays with the words before it — it never opens a caption or a line (`particles_stay_with_what_they_end`).
 - The numbers are the user's to tune in `~/.capcut-sub/config.txt` (`min_words`, `max_words`, `max_line_chars`) (`caption_numbers_come_from_config`).
 A caption bug found by the owner is fixed as a rule with a test, never only by editing that one caption.
