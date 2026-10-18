@@ -31,7 +31,7 @@ use filmcraft_media::{Generator, MediaInfo};
 use filmcraft_time::{FrameRate, TICKS_PER_SECOND, Tick, TimeRange};
 use serde::{Deserialize, Serialize};
 
-pub use caption::{CapWord, Caption, CaptionAlign, CaptionAnchor, CaptionFormat, CaptionStyle, CaptionTrack, align_words, plain_text};
+pub use caption::{CapWord, Caption, CaptionAlign, CaptionAnchor, CaptionFormat, CaptionHighlight, CaptionStyle, CaptionTrack, align_words, plain_text};
 pub use effect::{EffectDef, EffectInstance, EffectKind, ParamDef, ParamKind, effect_defs, find_effect};
 pub use essential::{AudioType, EssentialSound};
 pub use find::{FindOp, FindQuery, FindRow, SearchBin};

@@ -158,3 +158,21 @@ fn caption_list_track_filter_never_falls_back_to_every_track() {
         assert!(s.execute("captions.list", json!({"track": sel})).is_err(), "{sel} names no caption track");
     }
 }
+
+/// AYP: the karaoke / active-word highlight is a track style setting (undoable, listed).
+#[test]
+fn caption_highlight_style() {
+    use filmcraft_project::CaptionHighlight;
+    let mut s = demo();
+    s.execute("captions.newTrack", json!({})).unwrap();
+    s.execute("captions.setStyle", json!({"highlight": "karaoke", "highlightColor": "#ff0000", "highlightScale": 9})).unwrap();
+    let st = s.active_sequence().unwrap().caption_tracks[0].style.clone();
+    assert_eq!((st.highlight, st.highlight_color, st.highlight_scale), (CaptionHighlight::Karaoke, [255, 0, 0, 255], 3.0));
+    let l = s.execute("captions.list", json!({})).unwrap();
+    assert_eq!(l["tracks"][0]["style"]["highlight"], "karaoke", "{l}");
+    s.execute("captions.setStyle", json!({"highlight": "activeWord"})).unwrap();
+    assert_eq!(s.active_sequence().unwrap().caption_tracks[0].style.highlight, CaptionHighlight::ActiveWord);
+    assert!(s.execute("captions.setStyle", json!({"highlight": "sparkle"})).is_err());
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(s.active_sequence().unwrap().caption_tracks[0].style.highlight, CaptionHighlight::Karaoke);
+}

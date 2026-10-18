@@ -7,10 +7,11 @@
 //! frame. Renderers composite overlays over the finished picture.
 
 use filmcraft_color::srgb_to_linear;
-use filmcraft_project::{Caption, CaptionAlign, CaptionAnchor, CaptionStyle, CaptionTrack, Sequence};
+use filmcraft_project::{Caption, CaptionAlign, CaptionAnchor, CaptionHighlight, CaptionStyle, CaptionTrack, Sequence};
 use filmcraft_time::Tick;
+use std::ops::Range;
 
-use filmcraft_text::{ParagraphStyle, StyleRun, TextStyle, layout, layout_rich, render};
+use filmcraft_text::{ParagraphStyle, StyleRun, TextStyle, layout_rich, render};
 
 /// A rendered caption: premultiplied linear-light RGBA f32 pixels at `(x, y)` in the frame.
 #[derive(Clone, Debug, PartialEq)]
@@ -169,8 +170,79 @@ fn vtt_overrides(settings: &str) -> (Option<f32>, Option<CaptionAlign>) {
     (line, align)
 }
 
-/// Lay out and rasterise one caption for a `w`×`h` frame.
+/// Lay out and rasterise one caption for a `w`×`h` frame, as it shows at its start.
 pub fn render_caption(c: &Caption, style: &CaptionStyle, w: usize, h: usize) -> Option<Overlay> {
+    render_caption_at(c, style, c.start, w, h)
+}
+
+/// AYP: the highlighted words of `c` at timeline time `t`: byte ranges in
+/// `plain_text(&c.text)` and whether each is the word being said (the last one started).
+fn highlighted(c: &Caption, style: &CaptionStyle, t: Tick) -> Vec<(Range<usize>, bool)> {
+    if style.highlight == CaptionHighlight::None {
+        return Vec::new();
+    }
+    let r = t - c.start;
+    let active = c.words.iter().rposition(|w| w.start <= r);
+    c.words
+        .iter()
+        .enumerate()
+        .filter_map(|(i, w)| {
+            let is_active = active == Some(i);
+            let on = match style.highlight {
+                CaptionHighlight::Karaoke => w.start <= r,
+                CaptionHighlight::ActiveWord => is_active,
+                CaptionHighlight::None => false,
+            };
+            on.then(|| (w.range.clone(), is_active))
+        })
+        .collect()
+}
+
+/// AYP: one styled run of a drawn line: its bytes, its colour (None = the track colour) and
+/// whether it is drawn at the highlight scale.
+type Run = (Range<usize>, Option<[u8; 4]>, bool);
+
+/// AYP: the runs of line bytes `a..b` (line-local), from its `<c>` colour spans (line-local) and
+/// the highlighted words (caption-global, the line starting at byte `off`).
+fn line_runs(a: usize, b: usize, off: usize, spans: &[(Range<usize>, [u8; 4])], hl: &[(Range<usize>, bool)], hl_color: [u8; 4], scaled: bool) -> Vec<Run> {
+    let len = b.saturating_sub(a);
+    let mut col: Vec<Option<[u8; 4]>> = vec![None; len];
+    let mut big = vec![false; len];
+    for (r, c) in spans {
+        for k in r.start.max(a)..r.end.min(b) {
+            if let Some(x) = col.get_mut(k - a) {
+                *x = Some(*c);
+            }
+        }
+    }
+    for (g, active) in hl {
+        let (x, y) = (g.start.saturating_sub(off).max(a), g.end.saturating_sub(off).min(b));
+        for k in x..y {
+            if let Some(v) = col.get_mut(k - a) {
+                *v = Some(hl_color);
+            }
+            if let Some(v) = big.get_mut(k - a) {
+                *v = *active && scaled;
+            }
+        }
+    }
+    let mut runs: Vec<Run> = Vec::new();
+    for k in 0..len {
+        let (c, g) = (col.get(k).copied().flatten(), big.get(k).copied().unwrap_or(false));
+        if c.is_none() && !g {
+            continue;
+        }
+        match runs.last_mut() {
+            Some((r, rc, rg)) if r.end == k && *rc == c && *rg == g => r.end = k + 1,
+            _ => runs.push((k..k + 1, c, g)),
+        }
+    }
+    runs
+}
+
+/// Lay out and rasterise one caption for a `w`×`h` frame at timeline time `t` (AYP: `t` picks
+/// the highlighted words).
+pub fn render_caption_at(c: &Caption, style: &CaptionStyle, t: Tick, w: usize, h: usize) -> Option<Overlay> {
     if w == 0 || h == 0 {
         return None;
     }
@@ -178,11 +250,15 @@ pub fn render_caption(c: &Caption, style: &CaptionStyle, w: usize, h: usize) -> 
     let px = (style.size * scale).max(4.0);
     let max_w = w as f32 * 0.9;
     let ts = caption_style(&style.font, px);
+    let hl_scale = if style.highlight_scale.is_finite() { style.highlight_scale.clamp(0.5, 3.0) } else { 1.0 };
+    let big_ts = TextStyle { size: px * hl_scale, ..ts.clone() };
+    let hl = highlighted(c, style, t);
     // (speaker names are metadata; like Premiere, they are not burned in)
-    // AYP: each line keeps its `<c #rrggbb>` colour spans through wrapping.
+    // AYP: each line keeps its `<c #rrggbb>` colour spans and highlighted words through wrapping.
     let mut lines: Vec<String> = Vec::new();
-    let mut line_spans: Vec<Vec<(std::ops::Range<usize>, [u8; 4])>> = Vec::new();
+    let mut line_runs_all: Vec<Vec<Run>> = Vec::new();
     let mut open = None;
+    let mut off = 0usize;
     for raw in c.text.lines() {
         let (plain, spans) = colour_spans(raw, &mut open);
         let lead = plain.len() - plain.trim_start().len();
@@ -193,20 +269,23 @@ pub fn render_caption(c: &Caption, style: &CaptionStyle, w: usize, h: usize) -> 
             if text.trim().is_empty() {
                 continue;
             }
-            let sp = spans
-                .iter()
-                .filter_map(|(s, col)| {
-                    let (x, y) = (s.start.max(a), s.end.min(b));
-                    (x < y).then(|| ((x - a)..(y - a), *col))
-                })
-                .collect();
+            let runs = line_runs(a, b, off, &spans, &hl, style.highlight_color, hl_scale != 1.0);
             lines.push(text.to_string());
-            line_spans.push(sp);
+            line_runs_all.push(runs.into_iter().map(|(r, c, g)| ((r.start - a)..(r.end - a), c, g)).collect());
         }
+        off += plain.len() + 1;
     }
     if lines.is_empty() {
         return None;
     }
+    let layouts: Vec<_> = lines
+        .iter()
+        .zip(&line_runs_all)
+        .map(|(line, runs)| {
+            let sr: Vec<StyleRun> = runs.iter().map(|(r, _, g)| StyleRun { range: r.clone(), style: if *g { big_ts.clone() } else { ts.clone() } }).collect();
+            layout_rich(line, &ts, &sr, &ParagraphStyle::default())
+        })
+        .collect();
     let vm = filmcraft_text::fonts::face(filmcraft_text::resolve(&ts.family, &ts.style).face).metrics(px);
     let (asc, desc) = (vm.ascent, vm.descent);
     let lh = px * style.line_spacing.max(0.8);
@@ -224,7 +303,7 @@ pub fn render_caption(c: &Caption, style: &CaptionStyle, w: usize, h: usize) -> 
     .max(0.0)
     .round();
     let side = w as f32 * 0.05;
-    let widths: Vec<f32> = lines.iter().map(|l| filmcraft_text::measure(l, &ts)).collect();
+    let widths: Vec<f32> = layouts.iter().map(|l| l.lines.iter().map(|x| x.width).fold(0.0, f32::max)).collect();
     let xs: Vec<f32> = widths
         .iter()
         .map(|&lw| match align {
@@ -235,17 +314,19 @@ pub fn render_caption(c: &Caption, style: &CaptionStyle, w: usize, h: usize) -> 
         .collect();
     let outline = (style.outline * scale).max(0.0);
     let grow = outline.ceil() + 1.0;
+    // a bigger highlighted word may rise above its line box
+    let vgrow = grow + ((hl_scale - 1.0).max(0.0) * asc).ceil();
     let bx0 = xs.iter().zip(&widths).map(|(x, _)| x - pad_x - grow).fold(f32::MAX, f32::min).floor();
     let bx1 = xs.iter().zip(&widths).map(|(x, lw)| x + lw + pad_x + grow).fold(f32::MIN, f32::max).ceil();
-    let by0 = (top - grow).floor();
-    let by1 = (top + block_h + grow).ceil();
+    let by0 = (top - vgrow).floor();
+    let by1 = (top + block_h + vgrow).ceil();
     let (ox, oy) = (bx0 as i32, by0 as i32);
     let ow = (bx1 - bx0).max(1.0) as usize;
     let oh = (by1 - by0).max(1.0) as usize;
     let mut cover = vec![0.0f32; ow * oh];
     let mut coloured: Vec<([u8; 4], Vec<f32>)> = Vec::new();
     let mut bg = vec![0.0f32; ow * oh];
-    for (i, line) in lines.iter().enumerate() {
+    for (i, l) in layouts.iter().enumerate() {
         let lt = top + lh * i as f32;
         if style.background && style.background_color[3] > 0 {
             let (x0, x1) = (xs[i] - pad_x, xs[i] + widths[i] + pad_x);
@@ -261,31 +342,31 @@ pub fn render_caption(c: &Caption, style: &CaptionStyle, w: usize, h: usize) -> 
         }
         let baseline = lt + (lh - (asc + desc)) / 2.0 + asc;
         let at = render::at(xs[i], baseline.round());
-        let spans = line_spans.get(i).map(Vec::as_slice).unwrap_or(&[]);
-        if spans.is_empty() {
-            let l = layout(line, &ts, &ParagraphStyle::default());
-            let mut m = filmcraft_text::Mask { w: ow, h: oh, a: std::mem::take(&mut cover) };
-            render::draw(&l, &at, &mut m, (ox, oy));
-            cover = m.a;
+        let runs = line_runs_all.get(i).map(Vec::as_slice).unwrap_or(&[]);
+        // the track colour: the base run and runs that are only scaled
+        let mut m = filmcraft_text::Mask { w: ow, h: oh, a: std::mem::take(&mut cover) };
+        if runs.is_empty() {
+            render::draw(l, &at, &mut m, (ox, oy));
         } else {
-            let runs: Vec<StyleRun> = spans.iter().map(|(r, _)| StyleRun { range: r.clone(), style: ts.clone() }).collect();
-            let l = layout_rich(line, &ts, &runs, &ParagraphStyle::default());
-            let mut m = filmcraft_text::Mask { w: ow, h: oh, a: std::mem::take(&mut cover) };
-            render::draw_run(&l, &at, &mut m, (ox, oy), Some(0));
-            cover = m.a;
-            for (k, (_, col)) in spans.iter().enumerate() {
-                let idx = match coloured.iter().position(|(c, _)| c == col) {
-                    Some(p) => p,
-                    None => {
-                        coloured.push((*col, vec![0.0; ow * oh]));
-                        coloured.len() - 1
-                    }
-                };
-                let Some((_, mask)) = coloured.get_mut(idx) else { continue };
-                let mut m = filmcraft_text::Mask { w: ow, h: oh, a: std::mem::take(mask) };
-                render::draw_run(&l, &at, &mut m, (ox, oy), u16::try_from(k + 1).ok());
-                *mask = m.a;
+            render::draw_run(l, &at, &mut m, (ox, oy), Some(0));
+            for (k, _) in runs.iter().enumerate().filter(|(_, r)| r.1.is_none()) {
+                render::draw_run(l, &at, &mut m, (ox, oy), u16::try_from(k + 1).ok());
             }
+        }
+        cover = m.a;
+        for (k, (_, col, _)) in runs.iter().enumerate() {
+            let Some(col) = col else { continue };
+            let idx = match coloured.iter().position(|(c, _)| c == col) {
+                Some(p) => p,
+                None => {
+                    coloured.push((*col, vec![0.0; ow * oh]));
+                    coloured.len() - 1
+                }
+            };
+            let Some((_, mask)) = coloured.get_mut(idx) else { continue };
+            let mut m = filmcraft_text::Mask { w: ow, h: oh, a: std::mem::take(mask) };
+            render::draw_run(l, &at, &mut m, (ox, oy), u16::try_from(k + 1).ok());
+            *mask = m.a;
         }
     }
     // the outline goes around every glyph, coloured or not
@@ -350,7 +431,7 @@ pub fn track_overlay(track: &CaptionTrack, t: Tick, w: usize, h: usize) -> Optio
         return None;
     }
     let c = track.caption_at(t)?;
-    render_caption(c, &track.style, w, h)
+    render_caption_at(c, &track.style, t, w, h)
 }
 
 /// Overlays of every visible caption track of a sequence at `t`, bottom track first.
@@ -361,7 +442,7 @@ pub fn sequence_overlays(seq: &Sequence, t: Tick, w: usize, h: usize) -> Vec<Ove
 #[cfg(test)]
 mod tests {
     use super::*;
-    use filmcraft_project::{CaptionFormat, ClipId, TrackId};
+    use filmcraft_project::{CaptionFormat, CaptionHighlight, ClipId, TrackId};
 
     fn cap(text: &str) -> Caption {
         Caption {
@@ -489,6 +570,49 @@ mod tests {
             }
         }
         assert!(red > 200 && white > 200, "red {red} white {white}");
+    }
+
+    /// AYP: "AAAA" heard 0..50, "BBBB" heard 50..100 (relative to the caption start 0).
+    fn timed_cap() -> Caption {
+        let mut c = cap("AAAA BBBB");
+        c.words = filmcraft_project::align_words("AAAA BBBB", &[("AAAA", Tick(0), Tick(50)), ("BBBB", Tick(50), Tick(100))]);
+        c
+    }
+
+    /// Red pixels in the left and right halves of an overlay.
+    fn red_halves(o: &Overlay) -> (usize, usize) {
+        let (mut l, mut r) = (0, 0);
+        for (i, p) in o.px.chunks(4).enumerate() {
+            if p[3] > 0.9 && p[0] > 0.5 && p[1] < 0.1 {
+                if i % o.w < o.w / 2 { l += 1 } else { r += 1 }
+            }
+        }
+        (l, r)
+    }
+
+    #[test]
+    fn karaoke_colours_every_word_heard_so_far() {
+        let st = CaptionStyle { background: false, size: 120.0, highlight: CaptionHighlight::Karaoke, highlight_color: [255, 0, 0, 255], ..Default::default() };
+        let (l, r) = red_halves(&render_caption_at(&timed_cap(), &st, Tick(10), 1280, 720).unwrap());
+        assert!(l > 200 && r == 0, "{l} {r}");
+        let (l, r) = red_halves(&render_caption_at(&timed_cap(), &st, Tick(60), 1280, 720).unwrap());
+        assert!(l > 200 && r > 200, "{l} {r}");
+    }
+
+    #[test]
+    fn active_word_colours_only_the_word_being_said() {
+        let st =
+            CaptionStyle { background: false, size: 120.0, highlight: CaptionHighlight::ActiveWord, highlight_color: [255, 0, 0, 255], ..Default::default() };
+        let (l, r) = red_halves(&render_caption_at(&timed_cap(), &st, Tick(60), 1280, 720).unwrap());
+        assert!(l == 0 && r > 200, "{l} {r}");
+        // no highlight: never red; untimed captions draw as before
+        let none = CaptionStyle { highlight: CaptionHighlight::None, ..st.clone() };
+        assert_eq!(red_halves(&render_caption_at(&timed_cap(), &none, Tick(60), 1280, 720).unwrap()), (0, 0));
+        assert_eq!(render_caption_at(&cap("AAAA BBBB"), &st, Tick(60), 1280, 720), render_caption(&cap("AAAA BBBB"), &none, 1280, 720));
+        // a bigger active word makes the line wider
+        let big = CaptionStyle { highlight_scale: 1.5, ..st.clone() };
+        let (a, b) = (render_caption_at(&timed_cap(), &st, Tick(60), 1280, 720).unwrap(), render_caption_at(&timed_cap(), &big, Tick(60), 1280, 720).unwrap());
+        assert!(b.w > a.w + 20, "{} {}", a.w, b.w);
     }
 
     #[test]

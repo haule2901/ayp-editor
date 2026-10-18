@@ -70,6 +70,28 @@ pub enum CaptionAnchor {
     Bottom,
 }
 
+/// AYP: how the words being spoken stand out (needs word timings, see [`Caption::words`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum CaptionHighlight {
+    #[default]
+    None,
+    /// Every word heard so far takes the highlight colour (CapCut karaoke, `ktv_color`).
+    Karaoke,
+    /// Only the word being said (the last one started) takes the highlight colour.
+    ActiveWord,
+}
+
+impl CaptionHighlight {
+    pub const ALL: [CaptionHighlight; 3] = [CaptionHighlight::None, CaptionHighlight::Karaoke, CaptionHighlight::ActiveWord];
+    pub fn label(self) -> &'static str {
+        match self {
+            CaptionHighlight::None => "None",
+            CaptionHighlight::Karaoke => "Karaoke",
+            CaptionHighlight::ActiveWord => "Active word",
+        }
+    }
+}
+
 /// Track-level caption style (Premiere's caption track style / Essential Graphics text settings).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -93,6 +115,12 @@ pub struct CaptionStyle {
     /// Text outline width in pixels at 1080 lines (0 = none).
     pub outline: f32,
     pub outline_color: [u8; 4],
+    /// AYP: highlight of the words being spoken.
+    pub highlight: CaptionHighlight,
+    /// AYP: colour of highlighted words (CapCut `ktv_color`), sRGB + alpha.
+    pub highlight_color: [u8; 4],
+    /// AYP: size of the word being said relative to the others (1 = same size).
+    pub highlight_scale: f32,
 }
 
 impl Default for CaptionStyle {
@@ -109,6 +137,9 @@ impl Default for CaptionStyle {
             line_spacing: 1.25,
             outline: 0.0,
             outline_color: [0, 0, 0, 255],
+            highlight: CaptionHighlight::None,
+            highlight_color: [255, 210, 0, 255],
+            highlight_scale: 1.0,
         }
     }
 }
