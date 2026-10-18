@@ -417,6 +417,7 @@ fn style_strip(app: &mut FilmcraftApp, ui: &mut egui::Ui, r: Rect, track_idx: us
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r).id_salt("caption-style"));
     child.horizontal_centered(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
+        preset_picker(app, ui, tr.id.0, actions);
         let r = egui::ComboBox::from_id_salt(("caption-font", tr.id.0)).selected_text(&st.font).width(130.0).height(400.0).show_ui(ui, |ui| {
             if !filmcraft_text::fonts::system_scanned() {
                 filmcraft_text::fonts::scan_system();
@@ -481,6 +482,46 @@ fn style_strip(app: &mut FilmcraftApp, ui: &mut egui::Ui, r: Rect, track_idx: us
             }
         }
     });
+}
+
+/// AYP: caption presets — apply a built-in or saved style, save the track's style under a name,
+/// delete a saved one.
+fn preset_picker(app: &mut FilmcraftApp, ui: &mut egui::Ui, track: u64, actions: &mut Vec<(String, Value)>) {
+    let r = egui::ComboBox::from_id_salt(("caption-preset", track))
+        .selected_text(tl!("Preset"))
+        .width(90.0)
+        .height(400.0)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .show_ui(ui, |ui| {
+            for (p, builtin) in filmcraft_engine::caption_presets::all(&app.session) {
+                ui.horizontal(|ui| {
+                    let resp = ui.selectable_label(false, &p.name);
+                    app.auto.add(&format!("text.captions.preset.{}", p.name), resp.rect, &p.name);
+                    if resp.clicked() {
+                        actions.push(("captions.applyPreset".into(), json!({"track": track, "name": p.name})));
+                    }
+                    if !builtin {
+                        let del = ui.small_button("×").on_hover_text(tl!("Delete preset"));
+                        app.auto.add(&format!("text.captions.preset.{}.delete", p.name), del.rect, "Delete preset");
+                        if del.clicked() {
+                            actions.push(("captions.deletePreset".into(), json!({"name": p.name})));
+                        }
+                    }
+                });
+            }
+            ui.separator();
+            ui.horizontal(|ui| {
+                let te = ui.add(egui::TextEdit::singleline(&mut app.ui.caption_preset_name).hint_text(tl!("Preset name")).desired_width(130.0));
+                app.auto.add("text.captions.preset.name", te.rect, "Preset name");
+                let save = ui.add_enabled(!app.ui.caption_preset_name.trim().is_empty(), egui::Button::new(tl!("Save style")));
+                app.auto.add("text.captions.preset.save", save.rect, "Save style as preset");
+                if save.clicked() {
+                    actions.push(("captions.savePreset".into(), json!({"track": track, "name": app.ui.caption_preset_name.trim()})));
+                    app.ui.caption_preset_name.clear();
+                }
+            });
+        });
+    app.auto.add("text.captions.preset", r.response.rect, "Caption preset");
 }
 
 fn run(app: &mut FilmcraftApp, ui: &egui::Ui, actions: Vec<(String, Value)>) {

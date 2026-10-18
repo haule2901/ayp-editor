@@ -31,7 +31,7 @@ fn spec(
     CommandSpec { id, label, menu, shortcut, params, enabled, run, journal: true }
 }
 
-fn has_caption_track(s: &Session) -> std::result::Result<(), String> {
+pub(crate) fn has_caption_track(s: &Session) -> std::result::Result<(), String> {
     has_seq(s)?;
     if s.active_sequence().is_some_and(|q| !q.caption_tracks.is_empty()) { Ok(()) } else { Err("the sequence has no caption track".into()) }
 }

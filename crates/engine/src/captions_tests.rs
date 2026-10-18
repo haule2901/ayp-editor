@@ -213,3 +213,52 @@ fn caption_font_weight_and_tracking() {
     let l = s.execute("captions.list", json!({})).unwrap();
     assert_eq!(l["tracks"][0]["style"]["fontStyle"], "Bold", "{l}");
 }
+
+/// AYP: caption style presets — built-ins, applied (undoable, keeping the track's margin), saved
+/// by the user under a name, listed and deleted; a corrupt preset file never breaks the list.
+#[test]
+fn caption_presets_apply_save_delete() {
+    use filmcraft_project::CaptionHighlight;
+    let dir = crate::media_test_util::tmp_dir("caption-presets");
+    let mut s = demo();
+    s.prefs_path = Some(dir.join("prefs.json"));
+    s.execute("captions.newTrack", json!({})).unwrap();
+    s.execute("captions.setStyle", json!({"margin": 0.28})).unwrap();
+    let names = |s: &mut Session| -> Vec<(String, bool)> {
+        let r = s.execute("captions.presets", json!({})).unwrap();
+        r["presets"].as_array().unwrap().iter().map(|p| (p["name"].as_str().unwrap().to_string(), p["builtin"].as_bool().unwrap())).collect()
+    };
+    let builtin = names(&mut s);
+    assert!(builtin.iter().any(|(n, b)| n == "Karaoke vàng" && *b), "{builtin:?}");
+    assert_eq!(builtin.len(), 4);
+    s.execute("captions.applyPreset", json!({"name": "Karaoke vàng"})).unwrap();
+    let st = s.active_sequence().unwrap().caption_tracks[0].style.clone();
+    assert_eq!((st.highlight, st.margin), (CaptionHighlight::Karaoke, 0.28));
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(s.active_sequence().unwrap().caption_tracks[0].style.highlight, CaptionHighlight::None);
+    assert!(s.execute("captions.applyPreset", json!({"name": "No such"})).is_err());
+
+    // save the current style as "Của tôi", change the track, apply it back
+    s.execute("captions.setStyle", json!({"color": "#00ff00", "shadow": true})).unwrap();
+    s.execute("captions.savePreset", json!({"name": "  Của tôi "})).unwrap();
+    assert!(s.execute("captions.savePreset", json!({"name": "  "})).is_err());
+    assert!(names(&mut s).contains(&("Của tôi".to_string(), false)));
+    s.execute("captions.setStyle", json!({"reset": true})).unwrap();
+    s.execute("captions.applyPreset", json!({"name": "Của tôi"})).unwrap();
+    let st = s.active_sequence().unwrap().caption_tracks[0].style.clone();
+    assert_eq!((st.color, st.shadow), ([0, 255, 0, 255], true));
+    // persisted: a new session in the same data directory sees it
+    let mut s2 = demo();
+    s2.prefs_path = Some(dir.join("prefs.json"));
+    assert!(names(&mut s2).contains(&("Của tôi".to_string(), false)));
+    assert!(s2.execute("captions.deletePreset", json!({"name": "Karaoke vàng"})).is_err(), "built-ins stay");
+    s2.execute("captions.deletePreset", json!({"name": "Của tôi"})).unwrap();
+    assert_eq!(names(&mut s2).len(), 4);
+    // corrupt file: built-ins still listed, saving replaces it
+    std::fs::write(dir.join("caption-presets.json"), b"{not json").unwrap();
+    assert_eq!(names(&mut s2).len(), 4);
+    // without a data directory, saving is an error (not a crash)
+    let mut s3 = demo();
+    s3.execute("captions.newTrack", json!({})).unwrap();
+    assert!(s3.execute("captions.savePreset", json!({"name": "x"})).is_err());
+}

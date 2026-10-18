@@ -1,5 +1,6 @@
 //! Headless UI test of the caption track font picker in the Text panel's Captions tab: picking a
 //! family sets the track style's font, and macOS-private (`.`-prefixed) faces are not offered.
+//! AYP: the preset picker applies a preset and saves the track style under a typed name.
 
 use std::sync::mpsc::{Sender, channel};
 
@@ -16,8 +17,13 @@ struct Driver {
 
 impl Driver {
     fn demo() -> Self {
+        Self::with(|_| {})
+    }
+
+    fn with(setup: impl FnOnce(&mut Session)) -> Self {
         let mut session = Session::default();
         session.execute("file.openDemoProject", json!({})).expect("demo project");
+        setup(&mut session);
         let (tx, rx) = channel();
         let app = FilmcraftApp::new(session).with_control(rx);
         let harness = Harness::builder().with_size(egui::vec2(1600.0, 980.0)).with_max_steps(10_000).build_eframe(move |_cc| app);
@@ -92,4 +98,35 @@ fn caption_font_picker_sets_the_track_font() {
     d.ok("ui.click", json!({"id": serif}));
     d.frames(3);
     assert_eq!(d.font(track), "Noto Serif");
+}
+
+/// AYP: Preset ▸ "Karaoke vàng" applies the preset; a typed name + Save style saves the track
+/// style, which then shows in the list (with a delete button).
+#[test]
+fn caption_preset_picker_applies_and_saves() {
+    let dir = std::env::temp_dir().join(format!("fc-cap-presets-ui-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let prefs = dir.join("prefs.json");
+    let mut d = Driver::with(move |s| s.prefs_path = Some(prefs));
+    d.ok("ui.set", json!({"workspace": "Captions and Graphics"}));
+    let track = d.ok("engine.execute", json!({"command": "captions.newTrack", "params": {"format": "Subtitle"}}))["track"].as_u64().unwrap();
+    d.ok("engine.execute", json!({"command": "captions.add", "params": {"track": track, "text": "Hello", "seconds": 1.0}}));
+    d.frames(2);
+    d.ok("ui.click", json!({"id": "text.tab.Captions"}));
+    d.frames(3);
+    d.ok("ui.click", json!({"id": "text.captions.preset"}));
+    d.frames(3);
+    d.ok("ui.click", json!({"id": "text.captions.preset.Karaoke vàng"}));
+    d.frames(3);
+    let style = |d: &mut Driver| d.ok("engine.execute", json!({"command": "captions.list", "params": {}}))["tracks"][0]["style"].clone();
+    assert_eq!(style(&mut d)["highlight"], "karaoke");
+    d.ok("ui.click", json!({"id": "text.captions.preset.name"}));
+    d.frames(2);
+    d.ok("ui.type", json!({"text": "Của tôi"}));
+    d.frames(2);
+    d.ok("ui.click", json!({"id": "text.captions.preset.save"}));
+    d.frames(4);
+    let names = d.ok("engine.execute", json!({"command": "captions.presets", "params": {}}));
+    assert!(names["presets"].as_array().unwrap().iter().any(|p| p["name"] == "Của tôi" && p["builtin"] == false), "{names}");
+    assert!(d.ids("text.captions.preset.Của tôi.delete").len() == 1, "saved preset listed with a delete button");
 }
