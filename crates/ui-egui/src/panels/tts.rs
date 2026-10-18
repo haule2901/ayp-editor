@@ -59,8 +59,15 @@ impl Default for TtsDraft {
     fn default() -> Self {
         TtsDraft {
             text: String::new(),
-            language: "en-US".into(),
-            voice: if natural_installed() { "kokoro-heart".into() } else { filmcraft_tts::default_voice_id().into() },
+            // AYP: Vietnamese with a VieNeu voice when VieNeu is installed
+            language: if vieneu_installed() { "vi-VN".into() } else { "en-US".into() },
+            voice: if vieneu_installed() {
+                "vieneu-mai-anh".into()
+            } else if natural_installed() {
+                "kokoro-heart".into()
+            } else {
+                filmcraft_tts::default_voice_id().into()
+            },
             pitch: VocalPitch::Default,
             pace: 1.0,
             advanced_open: true,
@@ -79,6 +86,21 @@ impl TtsDraft {
 }
 
 /// The natural voice package is downloaded.
+fn vieneu_installed() -> bool {
+    let models = filmcraft_engine::transcript::models_dir();
+    filmcraft_tts::voices_in(models.as_deref()).iter().any(|v| v.engine == "vieneu" && v.installed)
+}
+
+/// AYP: the voice to use after switching to `language`: the current one if it speaks that
+/// language, else the first installed voice of it (else its first voice).
+fn voice_for_language(voices: &[filmcraft_tts::VoiceInfo], language: &str, current: &str) -> Option<String> {
+    if voices.iter().any(|v| v.id == current && v.language == language) {
+        return None;
+    }
+    let of_lang = || voices.iter().filter(|v| v.language == language);
+    of_lang().find(|v| v.installed).or_else(|| of_lang().next()).map(|v| v.id.to_string())
+}
+
 fn natural_installed() -> bool {
     filmcraft_engine::transcript::models_dir().as_deref().is_some_and(filmcraft_tts::catalog::installed)
 }
@@ -248,6 +270,9 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
             for (id, name) in filmcraft_tts::LANGUAGES {
                 if ui.selectable_label(d.language == *id, *name).clicked() {
                     d.language = id.to_string();
+                    if let Some(v) = voice_for_language(&voices, id, &d.voice) {
+                        d.voice = v;
+                    }
                 }
             }
         });
@@ -466,4 +491,20 @@ fn button(ui: &mut egui::Ui, t: &Tokens, r: Rect, icon: Icon, text: &str, primar
     icons::paint(p, Rect::from_center_size(pos2(x0 + 7.0, r.center().y), vec2(14.0, 14.0)), icon, fg);
     p.galley(pos2(x0 + 18.0, r.center().y - g.size().y / 2.0), g, fg);
     resp
+}
+
+#[cfg(test)]
+mod ayp_tests {
+    use super::voice_for_language;
+
+    #[test]
+    fn switching_language_picks_a_voice_of_it() {
+        let voices = filmcraft_tts::voices_in(None);
+        // English basic voice → Vietnamese: a VieNeu voice
+        let v = voice_for_language(&voices, "vi-VN", filmcraft_tts::default_voice_id()).unwrap();
+        assert!(v.starts_with("vieneu-"), "{v}");
+        // already speaks it: unchanged
+        assert_eq!(voice_for_language(&voices, "vi-VN", "vieneu-mai-anh"), None);
+        assert_eq!(voice_for_language(&voices, "xx-XX", "vieneu-mai-anh"), None);
+    }
 }
