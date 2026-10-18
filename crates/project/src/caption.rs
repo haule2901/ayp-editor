@@ -131,9 +131,97 @@ pub struct Caption {
     /// WebVTT cue settings (`line:90% align:start`…), kept verbatim.
     #[serde(default)]
     pub settings: String,
+    /// AYP: when each drawn word is heard (karaoke / active-word highlight). Empty for captions
+    /// typed by hand or imported from files.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub words: Vec<CapWord>,
+}
+
+/// AYP: one spoken word of a caption (CapCut's `words`): its bytes in the drawn text
+/// (`plain_text(&caption.text)`, lines joined by `\n`) and when it is heard, relative to the
+/// caption start so the timings move with the caption.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CapWord {
+    pub range: std::ops::Range<usize>,
+    pub start: Tick,
+    pub end: Tick,
+}
+
+/// AYP: time the words of `plain` from spoken words `(text, start, end)`. Words match in order
+/// ignoring case and punctuation (a few unmatched spoken words, like removed fillers, are
+/// skipped); a drawn word with no match ("10" for "mười") shares the time between its neighbours.
+pub fn align_words(plain: &str, src: &[(&str, Tick, Tick)]) -> Vec<CapWord> {
+    const LOOKAHEAD: usize = 6;
+    let key = |s: &str| s.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect::<String>();
+    let (Some(t0), Some(t1)) = (src.iter().map(|w| w.1).min(), src.iter().map(|w| w.2).max()) else { return Vec::new() };
+    let mut toks: Vec<std::ops::Range<usize>> = Vec::new();
+    let mut open = None;
+    for (i, ch) in plain.char_indices() {
+        match (ch.is_whitespace(), open) {
+            (true, Some(a)) => {
+                toks.push(a..i);
+                open = None;
+            }
+            (false, None) => open = Some(i),
+            _ => {}
+        }
+    }
+    if let Some(a) = open {
+        toks.push(a..plain.len());
+    }
+    let mut hit: Vec<Option<(Tick, Tick)>> = vec![None; toks.len()];
+    let mut j = 0;
+    for (r, h) in toks.iter().zip(hit.iter_mut()) {
+        let k = key(plain.get(r.clone()).unwrap_or(""));
+        if k.is_empty() {
+            continue;
+        }
+        let rest = src.get(j..).unwrap_or_default();
+        if let Some(off) = rest.iter().take(LOOKAHEAD).position(|w| key(w.0) == k) {
+            if let Some(w) = rest.get(off) {
+                *h = Some((w.1, w.2));
+            }
+            j += off + 1;
+        }
+    }
+    let mut out: Vec<CapWord> = Vec::with_capacity(toks.len());
+    let mut k = 0;
+    while k < toks.len() {
+        if let Some(Some((start, end))) = hit.get(k) {
+            out.push(CapWord { range: toks[k].clone(), start: *start, end: *end });
+            k += 1;
+            continue;
+        }
+        let run_end = (k..toks.len()).find(|&m| hit.get(m).is_some_and(Option::is_some)).unwrap_or(toks.len());
+        let lo = out.last().map_or(t0, |w| w.end);
+        let hi = hit.get(run_end).copied().flatten().map_or(t1, |h| h.0).max(lo);
+        let (n, span) = ((run_end - k) as i128, i128::from(hi.0) - i128::from(lo.0));
+        let at = |m: i128| lo + Tick(i64::try_from(span * m / n.max(1)).unwrap_or(0));
+        for (m, r) in toks.get(k..run_end).unwrap_or_default().iter().enumerate() {
+            out.push(CapWord { range: r.clone(), start: at(m as i128), end: at(m as i128 + 1) });
+        }
+        k = run_end;
+    }
+    out
 }
 
 impl Caption {
+    /// AYP: after the text changed from `old_text`, carry the word timings over to the new text.
+    pub fn retime_words(&mut self, old_text: &str) {
+        if self.words.is_empty() {
+            return;
+        }
+        let old = plain_text(old_text);
+        let src: Vec<(&str, Tick, Tick)> = self.words.iter().filter_map(|w| Some((old.get(w.range.clone())?, w.start, w.end))).collect();
+        self.words = align_words(&plain_text(&self.text), &src);
+    }
+    /// AYP: the caption start moved later by `by`: word times (relative to the start) move earlier.
+    pub fn shift_words(&mut self, by: Tick) {
+        for w in &mut self.words {
+            w.start -= by;
+            w.end -= by;
+        }
+    }
     pub fn end(&self) -> Tick {
         self.start + self.duration
     }
@@ -312,6 +400,7 @@ mod tests {
                 speaker: None,
                 cue_id: None,
                 settings: String::new(),
+                words: Vec::new(),
             });
         }
         assert_eq!(t.caption_at(Tick(120)).unwrap().text, "c1");
@@ -319,6 +408,46 @@ mod tests {
         assert!(t.check().is_ok());
         assert_eq!(CaptionFormat::from_name("cea608"), Some(CaptionFormat::Cea608));
         assert_eq!(CaptionFormat::from_name("CEA-708"), Some(CaptionFormat::Cea708));
+    }
+
+    /// AYP: word timings line up with the drawn words even after clean-up changed the text.
+    #[test]
+    fn align_words_matches_and_interpolates() {
+        let plain = "Mình nợ 10 triệu,\nrồi.";
+        let src = [
+            ("mình", Tick(0), Tick(10)),
+            ("ừ", Tick(10), Tick(20)),
+            ("nợ", Tick(20), Tick(30)),
+            ("mười", Tick(30), Tick(40)),
+            ("triệu", Tick(50), Tick(60)),
+            ("rồi", Tick(60), Tick(70)),
+        ];
+        let w = align_words(plain, &src);
+        let words: Vec<&str> = w.iter().map(|x| &plain[x.range.clone()]).collect();
+        assert_eq!(words, ["Mình", "nợ", "10", "triệu,", "rồi."]);
+        assert_eq!((w[0].start, w[0].end), (Tick(0), Tick(10)));
+        assert_eq!((w[1].start, w[1].end), (Tick(20), Tick(30)));
+        // "10" was "mười": it gets the time between its neighbours
+        assert_eq!((w[2].start, w[2].end), (Tick(30), Tick(50)));
+        assert_eq!((w[3].start, w[4].end), (Tick(50), Tick(70)));
+        assert!(align_words("x", &[]).is_empty());
+        // hostile times never overflow
+        let wild = align_words("a b c", &[("z", Tick(i64::MIN), Tick(i64::MAX))]);
+        assert_eq!(wild.len(), 3);
+    }
+
+    #[test]
+    fn old_captions_load_without_words_and_text_edits_keep_timings() {
+        let c: Caption = serde_json::from_str(r#"{"id":1,"start":0,"duration":100,"text":"a b"}"#).unwrap();
+        assert!(c.words.is_empty());
+        let mut c = Caption { words: align_words("Hello world", &[("hello", Tick(0), Tick(5)), ("world", Tick(5), Tick(9))]), ..c };
+        c.text = "Hello <c #ffd200>big</c> world".into();
+        c.retime_words("Hello world");
+        let plain = plain_text(&c.text);
+        let got: Vec<(&str, i64, i64)> = c.words.iter().map(|w| (&plain[w.range.clone()], w.start.0, w.end.0)).collect();
+        assert_eq!(got, [("Hello", 0, 5), ("big", 5, 5), ("world", 5, 9)]);
+        c.shift_words(Tick(5));
+        assert_eq!(c.words[2].start, Tick(0));
     }
 
     #[test]
@@ -333,6 +462,7 @@ mod tests {
                 speaker: None,
                 cue_id: None,
                 settings: String::new(),
+                words: Vec::new(),
             });
         }
         let result = std::panic::catch_unwind(|| track.check());

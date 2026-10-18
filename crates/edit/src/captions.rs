@@ -47,7 +47,7 @@ pub fn add_caption(seq: &mut Sequence, track: TrackId, start: Tick, duration: Ti
         return Err(EditError::TooShort);
     }
     let id = ClipId(ctx.alloc());
-    t.captions.push(Caption { id, start, duration: dur, text: text.to_string(), speaker: None, cue_id: None, settings: String::new() });
+    t.captions.push(Caption { id, start, duration: dur, text: text.to_string(), speaker: None, cue_id: None, settings: String::new(), words: Vec::new() });
     t.sort();
     Ok(id)
 }
@@ -68,6 +68,7 @@ pub fn split_caption(seq: &mut Sequence, id: ClipId, t: Tick, ctx: &mut EditCtx)
     right.start = t;
     right.duration = c.end() - t;
     right.cue_id = None;
+    right.shift_words(t - c.start);
     c.duration = t - c.start;
     tr.captions.push(right);
     tr.sort();
@@ -111,9 +112,19 @@ pub fn merge_captions(seq: &mut Sequence, ids: &[ClipId]) -> Result<ClipId> {
     let end = tr.captions[last].end();
     let text: Vec<String> = idx.iter().map(|&i| tr.captions[i].text.trim().to_string()).filter(|t| !t.is_empty()).collect();
     let keep = tr.captions[first].id;
+    // AYP: the merged caption keeps every word's timing (relative to the first start)
+    let first_start = tr.captions[first].start;
+    let plains: Vec<(String, &Caption)> = idx.iter().map(|&i| (filmcraft_project::plain_text(&tr.captions[i].text), &tr.captions[i])).collect();
+    let src: Vec<(&str, Tick, Tick)> = plains
+        .iter()
+        .flat_map(|(p, c)| c.words.iter().filter_map(move |w| Some((p.get(w.range.clone())?, w.start + c.start - first_start, w.end + c.start - first_start))))
+        .collect();
+    let joined = text.join("\n");
+    let words = filmcraft_project::align_words(&filmcraft_project::plain_text(&joined), &src);
     let c = &mut tr.captions[first];
     c.duration = end - c.start;
-    c.text = text.join("\n");
+    c.text = joined;
+    c.words = words;
     tr.captions.drain(first + 1..=last);
     Ok(keep)
 }
@@ -123,7 +134,8 @@ pub fn set_caption(seq: &mut Sequence, id: ClipId, text: Option<&str>, speaker: 
     let tid = owner(seq, id)?;
     let c = track_mut(seq, tid)?.caption_mut(id).ok_or(EditError::NoItem(id))?;
     if let Some(t) = text {
-        c.text = t.replace("\r\n", "\n");
+        let old = std::mem::replace(&mut c.text, t.replace("\r\n", "\n"));
+        c.retime_words(&old);
     }
     if let Some(s) = speaker {
         c.speaker = s.map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
@@ -142,6 +154,7 @@ pub fn set_caption_times(seq: &mut Sequence, id: ClipId, start: Tick, end: Tick,
         return Err(EditError::Other("captions would overlap".into()));
     }
     let c = tr.caption_mut(id).ok_or(EditError::NoItem(id))?;
+    c.shift_words(start - c.start);
     c.start = start;
     c.duration = end - start;
     tr.sort();
@@ -166,6 +179,7 @@ pub fn trim_caption(seq: &mut Sequence, id: ClipId, edge: Edge, delta: Tick, ctx
         Edge::In => {
             c.start += d;
             c.duration -= d;
+            c.shift_words(d);
         }
         Edge::Out => c.duration += d,
     }
@@ -256,6 +270,7 @@ pub fn insert_gap(tr: &mut CaptionTrack, at: Tick, dur: Tick, ctx: &mut EditCtx)
         right.start = at;
         right.duration = c.end() - at;
         right.cue_id = None;
+        right.shift_words(at - c.start);
         if let Some(l) = tr.caption_mut(c.id) {
             l.duration = at - c.start;
         }
@@ -282,7 +297,14 @@ pub fn extract_range(tr: &mut CaptionTrack, range: TimeRange) {
             let left = (a - s).max(Tick::ZERO);
             let right = (e - b).max(Tick::ZERO);
             if left + right > Tick::ZERO {
-                c.start = s.min(a);
+                // AYP: words heard in the removed span go; later ones move left with the cut
+                let new_start = s.min(a);
+                let cut = |t: Tick| if t >= b { t - range.duration } else { t.min(a) };
+                c.words.retain(|w| !(s + w.start >= a && s + w.start < b));
+                for w in &mut c.words {
+                    (w.start, w.end) = (cut(s + w.start) - new_start, cut(s + w.end) - new_start);
+                }
+                c.start = new_start;
                 c.duration = left + right;
                 out.push(c);
             }
@@ -312,6 +334,7 @@ mod tests {
                 speaker: None,
                 cue_id: None,
                 settings: String::new(),
+                words: Vec::new(),
             });
         }
         seq.caption_tracks.push(tr);
@@ -383,6 +406,49 @@ mod tests {
         let tr = seq.caption_track_mut(tid).unwrap();
         extract_range(tr, TimeRange::new(Tick(40), Tick(150)));
         assert_eq!(spans(&seq, tid), vec![(0, 40, "a".into()), (40, 80, "c".into())]);
+    }
+
+    /// AYP: word timings (relative to the caption start) follow split, merge, text edits, trims
+    /// and extracts.
+    fn timed(seq: &Sequence, id: ClipId) -> Vec<(String, i64, i64)> {
+        let c = seq.find_caption(id).unwrap().1;
+        let plain = filmcraft_project::plain_text(&c.text);
+        c.words.iter().map(|w| (plain[w.range.clone()].to_string(), w.start.0, w.end.0)).collect()
+    }
+
+    fn set_words(seq: &mut Sequence, id: ClipId, words: &[(&str, i64, i64)]) {
+        let tid = owner(seq, id).unwrap();
+        let c = seq.caption_track_mut(tid).unwrap().caption_mut(id).unwrap();
+        let src: Vec<(&str, Tick, Tick)> = words.iter().map(|(w, a, b)| (*w, Tick(*a), Tick(*b))).collect();
+        c.words = filmcraft_project::align_words(&filmcraft_project::plain_text(&c.text), &src);
+    }
+
+    #[test]
+    fn word_timings_follow_caption_edits() {
+        let (mut seq, tid) = seq_with(&[(0, 100, "hello big"), (100, 50, "world")]);
+        set_words(&mut seq, ClipId(1000), &[("hello", 0, 40), ("big", 40, 100)]);
+        set_words(&mut seq, ClipId(1001), &[("world", 0, 50)]);
+        let mut n = 1;
+        let r = split_caption(&mut seq, ClipId(1000), Tick(40), &mut ctx(&mut n)).unwrap();
+        assert_eq!(timed(&seq, ClipId(1000)), [("hello".into(), 0, 40), ("big".into(), 40, 100)]);
+        assert_eq!(timed(&seq, r), [("hello".into(), -40, 0), ("big".into(), 0, 60)]);
+        let m = merge_captions(&mut seq, &[r, ClipId(1001)]).unwrap();
+        assert_eq!(timed(&seq, m), [("hello".into(), -40, 0), ("big".into(), 0, 60), ("world".into(), 60, 110)]);
+        set_caption(&mut seq, m, Some("hello <c #ffd200>BIG</c> world!"), None).unwrap();
+        assert_eq!(timed(&seq, m), [("hello".into(), -40, 0), ("BIG".into(), 0, 60), ("world!".into(), 60, 110)]);
+        trim_caption(&mut seq, m, Edge::In, Tick(10), &ctx(&mut n)).unwrap();
+        assert_eq!(timed(&seq, m)[1], ("BIG".into(), -10, 50));
+        set_caption_times(&mut seq, m, Tick(40), Tick(150), &ctx(&mut n)).unwrap();
+        assert_eq!(timed(&seq, m)[1], ("BIG".into(), 0, 60));
+        // extract 60..80 (inside "BIG", heard 40..100): later words move left with the cut
+        let tr = seq.caption_track_mut(tid).unwrap();
+        extract_range(tr, TimeRange::new(Tick(60), Tick(20)));
+        assert_eq!(timed(&seq, m), [("hello".into(), -40, 0), ("BIG".into(), 0, 40), ("world!".into(), 40, 90)]);
+        // insert gap inside a caption: the right half's words are relative to its new start
+        let tr = seq.caption_track_mut(tid).unwrap();
+        insert_gap(tr, Tick(50), Tick(30), &mut ctx(&mut n));
+        let right = seq.caption_track(tid).unwrap().captions.iter().find(|c| c.start == Tick(80)).unwrap().id;
+        assert_eq!(timed(&seq, right)[1], ("BIG".into(), -10, 30));
     }
 
     #[test]

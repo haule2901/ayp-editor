@@ -419,18 +419,29 @@ pub(crate) fn place_blocks(mut out: Vec<CaptionBlock>, rules: &CaptionRules, rat
     out
 }
 
-/// Caption blocks as captions (ids from `ctx`).
-pub fn blocks_to_captions(blocks: &[CaptionBlock], ctx: &mut EditCtx) -> Vec<Caption> {
+/// Caption blocks as captions (ids from `ctx`). AYP: each caption keeps when its drawn words are
+/// heard, from the block's `words` (indices into `words`).
+pub fn blocks_to_captions(blocks: &[CaptionBlock], words: &[SeqWord], ctx: &mut EditCtx) -> Vec<Caption> {
     blocks
         .iter()
-        .map(|b| Caption {
-            id: ClipId(ctx.alloc()),
-            start: b.start,
-            duration: b.end - b.start,
-            text: b.text.clone(),
-            speaker: b.speaker.clone(),
-            cue_id: None,
-            settings: String::new(),
+        .map(|b| {
+            let src: Vec<(&str, Tick, Tick)> =
+                words.get(b.words.clone()).unwrap_or_default().iter().map(|w| (w.text.as_str(), w.start - b.start, w.end - b.start)).collect();
+            let duration = b.end - b.start;
+            let mut timed = filmcraft_project::align_words(&filmcraft_project::plain_text(&b.text), &src);
+            for w in &mut timed {
+                (w.start, w.end) = (w.start.clamp(Tick::ZERO, duration.max(Tick::ZERO)), w.end.clamp(Tick::ZERO, duration.max(Tick::ZERO)));
+            }
+            Caption {
+                id: ClipId(ctx.alloc()),
+                start: b.start,
+                duration,
+                text: b.text.clone(),
+                speaker: b.speaker.clone(),
+                cue_id: None,
+                settings: String::new(),
+                words: timed,
+            }
         })
         .collect()
 }

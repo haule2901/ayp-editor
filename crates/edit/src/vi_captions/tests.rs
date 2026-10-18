@@ -246,3 +246,25 @@ fn captions_fit_the_line_width() {
         assert!(c.lines().all(|l| l.chars().count() <= r.max_line_chars), "{t:?}");
     }
 }
+
+/// AYP: captions keep when each drawn word is heard (relative to the caption start), through
+/// filler removal, line breaks and keyword colouring.
+#[test]
+fn captions_keep_word_timings() {
+    let w = words("ừ mình nợ 10 triệu rồi", 1.0);
+    let mut r = rules(8, &[]);
+    r.highlight = Some("#ffd200".into());
+    let blocks = vi_caption_blocks(&w, &r, &CaptionRules::default(), R);
+    let mut next = 1;
+    let none = |_| None;
+    let mut ctx = crate::EditCtx { next_id: &mut next, media_duration: &none, media_start: &|_| Tick::ZERO, min_duration: R.frame_duration() };
+    let caps = crate::transcript::blocks_to_captions(&blocks, &w, &mut ctx);
+    assert_eq!(caps.len(), 1);
+    let c = &caps[0];
+    assert!(c.text.contains("<c #ffd200>"), "{}", c.text);
+    let plain = filmcraft_project::plain_text(&c.text);
+    let got: Vec<(&str, Tick)> = c.words.iter().map(|x| (&plain[x.range.clone()], c.start + x.start)).collect();
+    assert_eq!(got.iter().map(|g| g.0).collect::<Vec<_>>(), ["Mình", "nợ", "10", "triệu", "rồi"]);
+    assert_eq!(got[3].1, w[4].start);
+    assert!(c.words.iter().all(|x| x.start >= Tick::ZERO && x.end <= c.duration));
+}
