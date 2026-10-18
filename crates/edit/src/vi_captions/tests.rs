@@ -369,3 +369,19 @@ fn captions_are_cut_where_their_lines_read_well() {
         assert!(plain.lines().all(|l| l.chars().count() <= r.max_line_chars && l.split(' ').count() >= 2), "{t:?}");
     }
 }
+
+/// The caption rules' numbers are the user's to tune in `~/.capcut-sub/config.txt`; nonsense
+/// values are ignored.
+#[test]
+fn caption_numbers_come_from_config() {
+    let dir = std::env::temp_dir().join(format!("ayp-capcut-cfg-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    std::fs::write(dir.join("config.txt"), "min_words = 5\nmax_words = 9 # chữ\nmax_line_chars = 24\nmax_words = -3\n").unwrap();
+    let r = ViRules::load_user(&dir);
+    assert_eq!((r.min_words, r.max_words, r.max_line_chars, r.line_chars), (5, 9, 24, 24));
+    std::fs::write(dir.join("config.txt"), "min_words = 0\nmax_line_chars = 9000\n").unwrap();
+    let d = ViRules::standard();
+    let r = ViRules::load_user(&dir);
+    assert_eq!((r.min_words, r.max_line_chars), (d.min_words, d.max_line_chars));
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -26,3 +26,13 @@ FilmCraft is a clean-room, open-source, pure-Rust non-linear video editor target
 - For UI work, **look at the result**: drive via the control channel and take `ui.screenshot`, compare with `plan/premiere/screenshots/` (maintainer-local; see [`docs/agents.md`](docs/agents.md) §3).
 - Parallel agents: separate git worktrees and `CARGO_TARGET_DIR=target/agent-<name>`; keep every `Cargo.toml` valid at all times (the `crates/*` glob means one broken manifest breaks everyone).
 - Test fixtures: generate with ffmpeg into `target/fixtures/` (never commit media). See [`docs/testing.md`](docs/testing.md).
+
+## AYP caption rules (this fork)
+Vietnamese captions (`crates/edit/src/vi_captions.rs`, command `transcript.createCaptionsVi`) follow the owner's standard: *every element placed has a meaning* — captions should read like a finished product. Any change must keep these, each guarded by a test in `crates/edit/src/vi_captions/tests.rs`:
+- 6–10 words a caption, one complete idea; a one- or two-word sentence joins the caption before it (`captions_hold_six_to_ten_words`, `tiny_sentences_join_the_previous_caption`).
+- A caption that fits one line (21 characters at size 48, vertical) is not broken; two lines are balanced; **a line never holds a single word** (`no_lonely_word_and_no_needless_break`).
+- Never split a compound (built-in list + Wiktionary, CC BY-SA), a number from its unit, a keyword phrase, or an English phrase like "lay off" (`english_phrases_stay_whole`, `everyday_compounds_are_known`, `keywords_and_number_words_are_never_split`).
+- Lines start where a clause starts (nếu/thì/mà/vì/để/nhưng…) (`lines_break_before_a_clause`); captions are cut where their lines read well (`captions_are_cut_where_their_lines_read_well`).
+- ASR fixes (`replace`) are applied before any length decision (`replacements_come_before_line_breaks`).
+- The numbers are the user's to tune in `~/.capcut-sub/config.txt` (`min_words`, `max_words`, `max_line_chars`) (`caption_numbers_come_from_config`).
+A caption bug found by the owner is fixed as a rule with a test, never only by editing that one caption.

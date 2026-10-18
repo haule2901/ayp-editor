@@ -15,7 +15,8 @@
 //!
 //! The word lists can be tuned per user with CapCut Sub Fixer's files in `~/.capcut-sub/`
 //! (`tu-ghep.txt`, `tu-dem.txt`, `tu-thuong.txt`: one word per line, `-word` removes it;
-//! `config.txt`: `sentence_gap_seconds = 0.6`). Unreadable files are ignored.
+//! `config.txt`: `sentence_gap_seconds = 0.6`, and AYP's `min_words = 6`, `max_words = 10`,
+//! `max_line_chars = 21`). Unreadable files and out-of-range values are ignored.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -162,12 +163,24 @@ impl ViRules {
             for line in cfg.lines() {
                 let line = line.split('#').next().unwrap_or("");
                 let Some((k, v)) = line.split_once('=') else { continue };
-                if k.trim() == "sentence_gap_seconds"
-                    && let Ok(v) = v.trim().parse::<f64>()
+                let (k, v) = (k.trim(), v.trim());
+                if k == "sentence_gap_seconds"
+                    && let Ok(v) = v.parse::<f64>()
                     && v.is_finite()
                     && (0.0..=60.0).contains(&v)
                 {
                     r.sentence_gap = Tick::from_seconds_f64(v);
+                }
+                // AYP: the caption rules' numbers (see CLAUDE.md ▸ AYP caption rules)
+                let n = v.parse::<usize>().ok();
+                match (k, n) {
+                    ("min_words", Some(n)) if (1..=30).contains(&n) => r.min_words = n,
+                    ("max_words", Some(n)) if (1..=30).contains(&n) => r.max_words = n,
+                    ("max_line_chars", Some(n)) if (8..=80).contains(&n) => {
+                        r.max_line_chars = n;
+                        r.line_chars = n;
+                    }
+                    _ => {}
                 }
             }
         }
