@@ -449,3 +449,13 @@ fn one_more_caption_beats_a_crowded_one() {
     let t = texts(&words("về sale mình nói chuyện với sale hay", 0.0), &r);
     assert!(t.iter().all(|c| c.lines().all(|l| l.chars().count() <= r.max_line_chars)), "{t:?}");
 }
+
+/// "phấn đấu em / mới vô một tháng": with no full stop from the ASR, a common word it
+/// capitalised ("Em") still starts a sentence — the caption breaks before it.
+#[test]
+fn a_capitalised_word_starts_a_new_caption() {
+    let mut r = ViRules::standard();
+    r.highlight = None;
+    let t = texts(&words("Còn những nhân viên mới vô thì có tinh thần phấn đấu Em mới vô một tháng không biết có được ở lại làm hay", 0.0), &r);
+    assert!(t.iter().all(|c| !c.to_lowercase().replace('\n', " ").contains("đấu em")), "{t:?}");
+}

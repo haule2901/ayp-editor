@@ -37,5 +37,6 @@ Vietnamese captions (`crates/edit/src/vi_captions.rs`, command `transcript.creat
 - A sentence-final particle (ơi, à, ạ, nhé, nha, nhỉ, hả, nè…) stays with the words before it — it never opens a caption or a line (`particles_stay_with_what_they_end`).
 - Overlapping compounds break between the whole words ("hoàn thành | công việc") (`overlapping_compounds_break_between_them`); a very long pause-free stretch is cut into even blocks, never leaving a one-word caption (`very_long_stretches_leave_no_leftover`).
 - When the fewest captions can't lay out cleanly, a phrase gets one more caption (`one_more_caption_beats_a_crowded_one`).
+- A common word the ASR capitalised mid-text ("phấn đấu Em mới vô…") starts a sentence even without a full stop: captions break before it (`a_capitalised_word_starts_a_new_caption`).
 - The numbers are the user's to tune in `~/.capcut-sub/config.txt` (`min_words`, `max_words`, `max_line_chars`) (`caption_numbers_come_from_config`).
 A caption bug found by the owner is fixed as a rule with a test, never only by editing that one caption.
