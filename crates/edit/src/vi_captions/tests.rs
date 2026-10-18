@@ -438,3 +438,14 @@ fn very_long_stretches_leave_no_leftover() {
     let t = texts(&w, &r);
     assert!(t.iter().all(|c| c.split_whitespace().count() >= 3), "{t:?}");
 }
+
+/// "về sale mình / nói chuyện với sale hay" (36 characters, no clean break): when the fewest
+/// captions can't lay out cleanly, the phrase gets one more caption.
+#[test]
+fn one_more_caption_beats_a_crowded_one() {
+    let mut r = ViRules::standard();
+    r.polish = false;
+    r.highlight = None;
+    let t = texts(&words("về sale mình nói chuyện với sale hay", 0.0), &r);
+    assert!(t.iter().all(|c| c.lines().all(|l| l.chars().count() <= r.max_line_chars)), "{t:?}");
+}

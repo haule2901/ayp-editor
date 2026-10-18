@@ -341,59 +341,73 @@ fn split_phrase(p: &[usize], words: &[SeqWord], r: &ViRules, max_words: usize) -
         let blocks = n.div_ceil(4 * max_words);
         return p.chunks(n.div_ceil(blocks)).flat_map(|c| split_phrase(c, words, r, max_words)).collect();
     }
-    let k = n.div_ceil(max_words).max(total.div_ceil(cap)).min(n / 2).max(1);
-    let ideal = n as f64 / k as f64;
-    let (lo, hi) = (2usize, max_words + 1);
-    // best[g][i]: cost of the first i words in g captions; from[g][i]: where caption g starts
-    let inf = i64::MAX / 4;
-    let mut best = vec![vec![inf; n + 1]; k + 1];
-    let mut from = vec![vec![0usize; n + 1]; k + 1];
-    if let Some(row) = best.get_mut(0)
-        && let Some(c) = row.get_mut(0)
-    {
-        *c = 0;
-    }
-    for g in 1..=k {
-        for i in 1..=n {
-            for size in lo..=hi.min(i) {
-                let j = i - size;
-                let Some(&prev) = best.get(g - 1).and_then(|row| row.get(j)) else { continue };
-                if prev >= inf {
-                    continue;
-                }
-                let dev = size as f64 - ideal;
-                let mut c = prev + (dev * dev * 6.0) as i64;
-                let grp = p.get(j..i).unwrap_or_default();
-                if chars(grp) > cap {
-                    c += 1000;
-                }
-                c += layout_cost(&texts(grp), r);
-                if i < n {
-                    let (Some(a), Some(b)) = (p.get(i - 1).and_then(|&x| words.get(x)), p.get(i).and_then(|&x| words.get(x))) else { continue };
-                    c += break_cost(a, b, r);
-                }
-                if let (Some(cell), Some(f)) = (best.get_mut(g).and_then(|row| row.get_mut(i)), from.get_mut(g).and_then(|row| row.get_mut(i)))
-                    && c < *cell
-                {
-                    *cell = c;
-                    *f = j;
+    let k0 = n.div_ceil(max_words).max(total.div_ceil(cap)).min(n / 2).max(1);
+    // the fewest captions, or one more when that lays out better (an extra caption costs 40)
+    let solve = |k: usize| -> Option<(i64, Vec<Vec<usize>>)> {
+        let ideal = n as f64 / k as f64;
+        let (lo, hi) = (2usize, max_words + 1);
+        // best[g][i]: cost of the first i words in g captions; from[g][i]: where caption g starts
+        let inf = i64::MAX / 4;
+        let mut best = vec![vec![inf; n + 1]; k + 1];
+        let mut from = vec![vec![0usize; n + 1]; k + 1];
+        if let Some(row) = best.get_mut(0)
+            && let Some(c) = row.get_mut(0)
+        {
+            *c = 0;
+        }
+        for g in 1..=k {
+            for i in 1..=n {
+                for size in lo..=hi.min(i) {
+                    let j = i - size;
+                    let Some(&prev) = best.get(g - 1).and_then(|row| row.get(j)) else { continue };
+                    if prev >= inf {
+                        continue;
+                    }
+                    let dev = size as f64 - ideal;
+                    let mut c = prev + (dev * dev * 6.0) as i64;
+                    let grp = p.get(j..i).unwrap_or_default();
+                    if chars(grp) > cap {
+                        c += 1000;
+                    }
+                    c += layout_cost(&texts(grp), r);
+                    if i < n {
+                        let (Some(a), Some(b)) = (p.get(i - 1).and_then(|&x| words.get(x)), p.get(i).and_then(|&x| words.get(x))) else { continue };
+                        c += break_cost(a, b, r);
+                    }
+                    if let (Some(cell), Some(f)) = (best.get_mut(g).and_then(|row| row.get_mut(i)), from.get_mut(g).and_then(|row| row.get_mut(i)))
+                        && c < *cell
+                    {
+                        *cell = c;
+                        *f = j;
+                    }
                 }
             }
         }
+        let total_cost = best.get(k).and_then(|row| row.get(n)).copied().filter(|&c| c < inf)?;
+        let mut out = Vec::with_capacity(k);
+        let (mut g, mut i) = (k, n);
+        while g > 0 && i > 0 {
+            let j = from.get(g).and_then(|row| row.get(i)).copied().unwrap_or(0);
+            out.push(p.get(j..i).unwrap_or_default().to_vec());
+            i = j;
+            g -= 1;
+        }
+        out.reverse();
+        Some((total_cost, out))
+    };
+    let first = solve(k0);
+    let more = if k0 < n / 2 { solve(k0 + 1).map(|(c, o)| (c + 40, o)) } else { None };
+    match (first, more) {
+        (Some(a), Some(b)) => {
+            if b.0 < a.0 {
+                b.1
+            } else {
+                a.1
+            }
+        }
+        (Some(a), None) | (None, Some(a)) => a.1,
+        (None, None) => p.chunks(max_words).map(<[usize]>::to_vec).collect(),
     }
-    if best.get(k).and_then(|row| row.get(n)).is_none_or(|&c| c >= inf) {
-        return p.chunks(max_words).map(<[usize]>::to_vec).collect();
-    }
-    let mut out = Vec::with_capacity(k);
-    let (mut g, mut i) = (k, n);
-    while g > 0 && i > 0 {
-        let j = from.get(g).and_then(|row| row.get(i)).copied().unwrap_or(0);
-        out.push(p.get(j..i).unwrap_or_default().to_vec());
-        i = j;
-        g -= 1;
-    }
-    out.reverse();
-    out
 }
 
 /// Lay the sequence transcript out as Vietnamese captions (see the module docs). Times are
