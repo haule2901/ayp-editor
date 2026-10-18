@@ -204,6 +204,8 @@ fn track_json(s: &Session, t: &CaptionTrack, index: usize) -> Value {
             "highlight": highlight_key(t.style.highlight), "highlightColor": hex(t.style.highlight_color), "highlightScale": t.style.highlight_scale,
             "shadow": t.style.shadow, "shadowColor": hex(t.style.shadow_color), "shadowAngle": t.style.shadow_angle,
             "shadowDistance": t.style.shadow_distance, "shadowSmoothing": t.style.shadow_smoothing,
+            "backgroundRoundRadius": t.style.background_round_radius, "backgroundPadding": t.style.background_padding,
+            "backgroundBlock": t.style.background_block,
         },
         "captions": t.captions.iter().map(|c| caption_json(s, c)).collect::<Vec<_>>(),
     })
@@ -308,7 +310,7 @@ pub fn commands() -> Vec<CommandSpec> {
             "Caption Track Style",
             &[],
             None,
-            r##"{"track":id|"C1","font":str?,"size":f32?,"color":"#rrggbb[aa]"?,"background":bool?,"backgroundColor":"#rrggbbaa"?,"align":"left|center|right"?,"anchor":"top|middle|bottom"?,"margin":0..0.45 (fraction of frame height)?,"lineSpacing":f32?,"outline":f32?,"outlineColor":str?,"highlight":"none|karaoke|activeWord"?,"highlightColor":str?,"highlightScale":0.5..3?,"shadow":bool?,"shadowColor":str?,"shadowAngle":deg?,"shadowDistance":0..100?,"shadowSmoothing":0..50?,"reset":bool?}"##,
+            r##"{"track":id|"C1","font":str?,"size":f32?,"color":"#rrggbb[aa]"?,"background":bool?,"backgroundColor":"#rrggbbaa"?,"align":"left|center|right"?,"anchor":"top|middle|bottom"?,"margin":0..0.45 (fraction of frame height)?,"lineSpacing":f32?,"outline":f32?,"outlineColor":str?,"highlight":"none|karaoke|activeWord"?,"highlightColor":str?,"highlightScale":0.5..3?,"shadow":bool?,"shadowColor":str?,"shadowAngle":deg?,"shadowDistance":0..100?,"shadowSmoothing":0..50?,"backgroundRoundRadius":0..1?,"backgroundPadding":0..100?,"backgroundBlock":bool?,"reset":bool?}"##,
             has_caption_track,
             |s, p| {
                 let tid = track_param(s, p).ok_or_else(|| bad("captions.setStyle", "no such caption track"))?;
@@ -373,6 +375,15 @@ pub fn commands() -> Vec<CommandSpec> {
                     }
                     if let Some(v) = f64_p(&p, "shadowSmoothing") {
                         y.shadow_smoothing = (v as f32).clamp(0.0, 50.0);
+                    }
+                    if let Some(v) = f64_p(&p, "backgroundRoundRadius") {
+                        y.background_round_radius = (v as f32).clamp(0.0, 1.0);
+                    }
+                    if let Some(v) = f64_p(&p, "backgroundPadding") {
+                        y.background_padding = (v as f32).clamp(0.0, 100.0);
+                    }
+                    if let Some(b) = bool_p(&p, "backgroundBlock") {
+                        y.background_block = b;
                     }
                     match str_p(&p, "align") {
                         Some("left") => y.align = CaptionAlign::Left,

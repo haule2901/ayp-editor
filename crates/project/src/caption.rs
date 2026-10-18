@@ -106,6 +106,12 @@ pub struct CaptionStyle {
     pub background: bool,
     /// Background box colour, sRGB + alpha.
     pub background_color: [u8; 4],
+    /// AYP: box corner roundness, 0 (square) to 1 (pill) (CapCut `background_round_radius`).
+    pub background_round_radius: f32,
+    /// AYP: extra room between text and box edge, pixels at 1080 lines.
+    pub background_padding: f32,
+    /// AYP: one box around the whole caption instead of one per line.
+    pub background_block: bool,
     pub align: CaptionAlign,
     pub anchor: CaptionAnchor,
     /// Distance from the anchored frame edge, as a fraction of the frame height.
@@ -142,6 +148,9 @@ impl Default for CaptionStyle {
             color: [255, 255, 255, 255],
             background: true,
             background_color: [0, 0, 0, 191],
+            background_round_radius: 0.0,
+            background_padding: 0.0,
+            background_block: false,
             align: CaptionAlign::Center,
             anchor: CaptionAnchor::Bottom,
             margin: 0.08,

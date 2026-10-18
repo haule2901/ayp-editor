@@ -189,3 +189,15 @@ fn caption_shadow_style() {
     let l = s.execute("captions.list", json!({})).unwrap();
     assert_eq!(l["tracks"][0]["style"]["shadow"], true, "{l}");
 }
+
+/// AYP: rounded / padded / whole-block caption box settings, clamped.
+#[test]
+fn caption_box_style() {
+    let mut s = demo();
+    s.execute("captions.newTrack", json!({})).unwrap();
+    s.execute("captions.setStyle", json!({"backgroundRoundRadius": 7, "backgroundPadding": 12, "backgroundBlock": true})).unwrap();
+    let st = s.active_sequence().unwrap().caption_tracks[0].style.clone();
+    assert_eq!((st.background_round_radius, st.background_padding, st.background_block), (1.0, 12.0, true));
+    let l = s.execute("captions.list", json!({})).unwrap();
+    assert_eq!(l["tracks"][0]["style"]["backgroundBlock"], true, "{l}");
+}

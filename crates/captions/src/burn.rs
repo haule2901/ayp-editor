@@ -289,7 +289,8 @@ pub fn render_caption_at(c: &Caption, style: &CaptionStyle, t: Tick, w: usize, h
     let vm = filmcraft_text::fonts::face(filmcraft_text::resolve(&ts.family, &ts.style).face).metrics(px);
     let (asc, desc) = (vm.ascent, vm.descent);
     let lh = px * style.line_spacing.max(0.8);
-    let pad_x = (px * 0.3).round();
+    let pad_v = if style.background_padding.is_finite() { (style.background_padding.clamp(0.0, 200.0) * scale).round() } else { 0.0 };
+    let pad_x = (px * 0.3).round() + pad_v;
     let block_h = lh * lines.len() as f32;
     let (line_override, align_override) = vtt_overrides(&c.settings);
     let align = align_override.unwrap_or(style.align);
@@ -324,8 +325,8 @@ pub fn render_caption_at(c: &Caption, style: &CaptionStyle, t: Tick, w: usize, h
     let vgrow = grow + ((hl_scale - 1.0).max(0.0) * asc).ceil();
     let bx0 = xs.iter().zip(&widths).map(|(x, _)| x - pad_x - grow).fold(f32::MAX, f32::min).floor();
     let bx1 = xs.iter().zip(&widths).map(|(x, lw)| x + lw + pad_x + grow).fold(f32::MIN, f32::max).ceil();
-    let by0 = (top - vgrow).floor();
-    let by1 = (top + block_h + vgrow).ceil();
+    let by0 = (top - vgrow - pad_v).floor();
+    let by1 = (top + block_h + vgrow + pad_v).ceil();
     let (ox, oy) = (bx0 as i32, by0 as i32);
     let ow = (bx1 - bx0).max(1.0) as usize;
     let oh = (by1 - by0).max(1.0) as usize;
@@ -334,17 +335,9 @@ pub fn render_caption_at(c: &Caption, style: &CaptionStyle, t: Tick, w: usize, h
     let mut bg = vec![0.0f32; ow * oh];
     for (i, l) in layouts.iter().enumerate() {
         let lt = top + lh * i as f32;
-        if style.background && style.background_color[3] > 0 {
-            let (x0, x1) = (xs[i] - pad_x, xs[i] + widths[i] + pad_x);
-            let (y0, y1) = (lt, lt + lh);
-            for y in (y0.floor() as i32).max(oy)..(y1.ceil() as i32).min(oy + oh as i32) {
-                let fy = ((y as f32 + 1.0).min(y1) - (y as f32).max(y0)).clamp(0.0, 1.0);
-                for x in (x0.floor() as i32).max(ox)..(x1.ceil() as i32).min(ox + ow as i32) {
-                    let fx = ((x as f32 + 1.0).min(x1) - (x as f32).max(x0)).clamp(0.0, 1.0);
-                    let j = (y - oy) as usize * ow + (x - ox) as usize;
-                    bg[j] = (bg[j] + fx * fy).min(1.0);
-                }
-            }
+        if style.background && style.background_color[3] > 0 && !style.background_block {
+            let r = [xs[i] - pad_x, lt - pad_v, xs[i] + widths[i] + pad_x, lt + lh + pad_v];
+            fill_round_rect(&mut bg, (ox, oy, ow, oh), r, style.background_round_radius);
         }
         let baseline = lt + (lh - (asc + desc)) / 2.0 + asc;
         let at = render::at(xs[i], baseline.round());
@@ -374,6 +367,12 @@ pub fn render_caption_at(c: &Caption, style: &CaptionStyle, t: Tick, w: usize, h
             render::draw_run(l, &at, &mut m, (ox, oy), u16::try_from(k + 1).ok());
             *mask = m.a;
         }
+    }
+    // AYP: one box around the whole caption
+    if style.background && style.background_color[3] > 0 && style.background_block {
+        let x0 = xs.iter().fold(f32::MAX, |a, x| a.min(*x)) - pad_x;
+        let x1 = xs.iter().zip(&widths).fold(f32::MIN, |a, (x, lw)| a.max(x + lw)) + pad_x;
+        fill_round_rect(&mut bg, (ox, oy, ow, oh), [x0, top - pad_v, x1, top + block_h + pad_v], style.background_round_radius);
     }
     // the outline goes around every glyph, coloured or not
     let union: Vec<f32> =
@@ -421,6 +420,28 @@ pub fn render_caption_at(c: &Caption, style: &CaptionStyle, t: Tick, w: usize, h
         out[j * 4..j * 4 + 4].copy_from_slice(&p);
     }
     Some(Overlay { x: ox, y: oy, w: ow, h: oh, px: out })
+}
+
+/// AYP: add the antialiased coverage of rectangle `r` (`[x0, y0, x1, y1]` in frame pixels) with
+/// corners rounded by `round` (0 square … 1 pill) into `mask`, an `ow`×`oh` area at `(ox, oy)`.
+fn fill_round_rect(mask: &mut [f32], (ox, oy, ow, oh): (i32, i32, usize, usize), r: [f32; 4], round: f32) {
+    let (hx, hy) = ((r[2] - r[0]) / 2.0, (r[3] - r[1]) / 2.0);
+    if !(hx > 0.0 && hy > 0.0) {
+        return;
+    }
+    let (cx, cy) = (r[0] + hx, r[1] + hy);
+    let rad = if round.is_finite() { round.clamp(0.0, 1.0) } else { 0.0 } * hx.min(hy);
+    for y in (r[1].floor() as i32).max(oy)..(r[3].ceil() as i32).min(oy + oh as i32) {
+        for x in (r[0].floor() as i32).max(ox)..(r[2].ceil() as i32).min(ox + ow as i32) {
+            // signed distance from the pixel centre to the rounded rectangle
+            let (qx, qy) = ((x as f32 + 0.5 - cx).abs() - (hx - rad), (y as f32 + 0.5 - cy).abs() - (hy - rad));
+            let d = (qx.max(0.0).hypot(qy.max(0.0))) + qx.max(qy).min(0.0) - rad;
+            let a = (0.5 - d).clamp(0.0, 1.0);
+            if let Some(v) = mask.get_mut((y - oy) as usize * ow + (x - ox) as usize) {
+                *v = v.max(a);
+            }
+        }
+    }
 }
 
 /// Max-filter a coverage mask with a disc of radius `r`.
@@ -673,6 +694,34 @@ mod tests {
         assert!(o.px.chunks(4).any(|p| p[3] > 0.05 && p[3] < 0.5 && p[0] > p[1]));
         let edge = |x: usize, y: usize| o.px[(y * o.w + x) * 4 + 3];
         assert!((0..o.h).all(|y| edge(o.w - 1, y) < 0.05), "shadow cut at the right edge");
+    }
+
+    /// AYP: rounded box corners (CapCut background_round_radius), inner padding and one box
+    /// around the whole block instead of one per line.
+    #[test]
+    fn rounded_padded_block_box() {
+        let square = CaptionStyle { background_color: [0, 0, 0, 255], ..Default::default() };
+        let round = CaptionStyle { background_round_radius: 1.0, ..square.clone() };
+        let (a, b) = (render_caption(&cap("Box"), &square, 1920, 1080).unwrap(), render_caption(&cap("Box"), &round, 1920, 1080).unwrap());
+        assert_eq!((a.x, a.y, a.w, a.h), (b.x, b.y, b.w, b.h));
+        // the box's top-left corner
+        let (mut cx, mut cy) = (usize::MAX, usize::MAX);
+        for (i, p) in a.px.chunks(4).enumerate() {
+            if p[3] > 0.5 {
+                cx = cx.min(i % a.w);
+                cy = cy.min(i / a.w);
+            }
+        }
+        let alpha = |o: &Overlay| o.px[((cy + 1) * o.w + cx + 1) * 4 + 3];
+        assert!(alpha(&a) > 0.9 && alpha(&b) < 0.1, "square {} round {}", alpha(&a), alpha(&b));
+        let padded = CaptionStyle { background_padding: 20.0, ..square.clone() };
+        let c = render_caption(&cap("Box"), &padded, 1920, 1080).unwrap();
+        assert!(c.h >= a.h + 38 && c.w >= a.w + 38, "{}x{} vs {}x{}", c.w, c.h, a.w, a.h);
+        let boxed = |o: &Overlay| o.px.chunks(4).filter(|p| p[3] > 0.9 && p[0] < 0.01).count();
+        let text = "WWWWWWWWWW\nW";
+        let lines = render_caption(&cap(text), &square, 1920, 1080).unwrap();
+        let block = render_caption(&cap(text), &CaptionStyle { background_block: true, ..square }, 1920, 1080).unwrap();
+        assert!(boxed(&block) > boxed(&lines) * 13 / 10, "{} {}", boxed(&block), boxed(&lines));
     }
 
     #[test]
