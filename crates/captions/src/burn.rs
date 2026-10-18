@@ -50,10 +50,14 @@ impl Overlay {
     }
 }
 
-/// The caption face: the track's font family (Inter when empty or not installed) in SemiBold at `px`.
-fn caption_style(font: &str, px: f32) -> TextStyle {
-    let family = if font.trim().is_empty() { filmcraft_text::fonts::DEFAULT_FAMILY } else { font.trim() };
-    TextStyle { family: family.into(), style: "SemiBold".into(), size: px, ..Default::default() }
+/// The caption face: the track's font family (Inter when empty or not installed) at `px`, in the
+/// track's weight (AYP; SemiBold when empty) and letter spacing.
+fn caption_style(style: &CaptionStyle, px: f32) -> TextStyle {
+    let font = style.font.trim();
+    let family = if font.is_empty() { filmcraft_text::fonts::DEFAULT_FAMILY } else { font };
+    let weight = if style.font_style.trim().is_empty() { "SemiBold" } else { style.font_style.trim() };
+    let tracking = if style.tracking.is_finite() { style.tracking.clamp(-200.0, 1000.0) } else { 0.0 };
+    TextStyle { family: family.into(), style: weight.into(), size: px, tracking, ..Default::default() }
 }
 
 fn lin(c: [u8; 4]) -> [f32; 4] {
@@ -249,7 +253,7 @@ pub fn render_caption_at(c: &Caption, style: &CaptionStyle, t: Tick, w: usize, h
     let scale = h as f32 / 1080.0;
     let px = (style.size * scale).max(4.0);
     let max_w = w as f32 * 0.9;
-    let ts = caption_style(&style.font, px);
+    let ts = caption_style(style, px);
     let hl_scale = if style.highlight_scale.is_finite() { style.highlight_scale.clamp(0.5, 3.0) } else { 1.0 };
     let big_ts = TextStyle { size: px * hl_scale, ..ts.clone() };
     let hl = highlighted(c, style, t);
@@ -722,6 +726,20 @@ mod tests {
         let lines = render_caption(&cap(text), &square, 1920, 1080).unwrap();
         let block = render_caption(&cap(text), &CaptionStyle { background_block: true, ..square }, 1920, 1080).unwrap();
         assert!(boxed(&block) > boxed(&lines) * 13 / 10, "{} {}", boxed(&block), boxed(&lines));
+    }
+
+    /// AYP: font weight (CapCut font style) and letter spacing.
+    #[test]
+    fn font_weight_and_tracking() {
+        let semi = render_caption(&cap("Hello"), &CaptionStyle::default(), 1280, 720).unwrap();
+        let bold = render_caption(&cap("Hello"), &CaptionStyle { font_style: "Bold".into(), ..Default::default() }, 1280, 720).unwrap();
+        let ink = |o: &Overlay| o.px.chunks(4).map(|p| p[0]).sum::<f32>();
+        assert!(ink(&bold) > ink(&semi) * 1.03, "{} {}", ink(&bold), ink(&semi));
+        // an empty weight is the default SemiBold; an unknown one never fails
+        assert_eq!(render_caption(&cap("Hello"), &CaptionStyle { font_style: " ".into(), ..Default::default() }, 1280, 720).unwrap(), semi);
+        assert!(render_caption(&cap("Hello"), &CaptionStyle { font_style: "Ultra 900".into(), ..Default::default() }, 1280, 720).is_some());
+        let wide = render_caption(&cap("Hello"), &CaptionStyle { tracking: 200.0, ..Default::default() }, 1280, 720).unwrap();
+        assert!(wide.w > semi.w + 20, "{} {}", wide.w, semi.w);
     }
 
     #[test]

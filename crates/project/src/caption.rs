@@ -98,8 +98,12 @@ impl CaptionHighlight {
 pub struct CaptionStyle {
     /// Font family name (bundled, craft-fonts or system); unknown or empty names fall back to Inter.
     pub font: String,
+    /// AYP: font weight / style name ("Regular", "SemiBold", "Bold", "Black"…); empty = SemiBold.
+    pub font_style: String,
     /// Font size in pixels for a 1080-line frame (scaled with the frame height).
     pub size: f32,
+    /// AYP: letter spacing in 1/1000 em (CapCut `letter_spacing`).
+    pub tracking: f32,
     /// Text colour, sRGB + alpha.
     pub color: [u8; 4],
     /// Draw a background box behind each line.
@@ -144,7 +148,9 @@ impl Default for CaptionStyle {
     fn default() -> Self {
         Self {
             font: "Inter".into(),
+            font_style: "SemiBold".into(),
             size: 54.0,
+            tracking: 0.0,
             color: [255, 255, 255, 255],
             background: true,
             background_color: [0, 0, 0, 191],

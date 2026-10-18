@@ -201,3 +201,15 @@ fn caption_box_style() {
     let l = s.execute("captions.list", json!({})).unwrap();
     assert_eq!(l["tracks"][0]["style"]["backgroundBlock"], true, "{l}");
 }
+
+/// AYP: caption font weight and letter spacing.
+#[test]
+fn caption_font_weight_and_tracking() {
+    let mut s = demo();
+    s.execute("captions.newTrack", json!({})).unwrap();
+    s.execute("captions.setStyle", json!({"fontStyle": "Bold", "tracking": 5000})).unwrap();
+    let st = s.active_sequence().unwrap().caption_tracks[0].style.clone();
+    assert_eq!((st.font_style.as_str(), st.tracking), ("Bold", 1000.0));
+    let l = s.execute("captions.list", json!({})).unwrap();
+    assert_eq!(l["tracks"][0]["style"]["fontStyle"], "Bold", "{l}");
+}
