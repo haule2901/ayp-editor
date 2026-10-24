@@ -498,6 +498,22 @@ fn build_effects() -> Vec<EffectDef> {
                 fs("threshold", "Threshold", 0.0, (0.0, 255.0), (0.0, 255.0), "", 0),
             ],
         ),
+        // AYP: CapCut-style beauty retouch; the face ellipse is in clip pixels so Apple Vision boxes
+        // (ayp-cut faces.swift) can be keyed straight onto it
+        video(
+            "skin_smooth",
+            "Làm mịn da",
+            BLUR,
+            vec![
+                f("strength", "Độ mịn", 50.0, 0.0, 100.0, ""),
+                fs("radius", "Bán kính", 8.0, (1.0, 64.0), (1.0, 30.0), "px", 0),
+                f("brighten", "Làm sáng da", 0.0, 0.0, 100.0, ""),
+                b("face_only", "Chỉ trong vùng mặt", false),
+                pt("face_center", "Tâm mặt", f64::NAN, f64::NAN),
+                fs("face_w", "Rộng mặt", 600.0, (0.0, 8000.0), (0.0, 2000.0), "px", 0),
+                fs("face_h", "Cao mặt", 800.0, (0.0, 8000.0), (0.0, 2000.0), "px", 0),
+            ],
+        ),
         video("camera_blur", "Camera Blur", vfx::LEGACY, vec![f("percent", "Percent Blur", 0.0, 0.0, 100.0, "")]),
         video("black_white", "Black & White", IMAGE_CONTROL, vec![]),
         video(

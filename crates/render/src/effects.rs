@@ -126,6 +126,7 @@ pub fn apply(img: &mut Image, e: &EffectInstance, cx: &FxCtx) {
     }
     match e.effect.as_str() {
         "lumetri" => lumetri(img, e, cx),
+        "skin_smooth" => skin_smooth(img, e, cx),
         "median" => {
             let r = median_radius(f(e, "radius", cx), cx.px_scale, img.w.max(img.h));
             if r > 0 {
@@ -892,6 +893,100 @@ pub(crate) fn median(img: &mut Image, r: isize) {
     });
 }
 
+fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
+    let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// Soft skin-tone key of a display-encoded colour (YCbCr box around skin, with soft edges): eye
+/// whites (no chroma), pupils/brows/hair (too dark) and strongly saturated lips fall out.
+pub(crate) fn skin_key(c: [f32; 3]) -> f32 {
+    let y = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
+    let cb = 128.0 + 255.0 * (-0.1687 * c[0] - 0.3313 * c[1] + 0.5 * c[2]);
+    let cr = 128.0 + 255.0 * (0.5 * c[0] - 0.4187 * c[1] - 0.0813 * c[2]);
+    let band = |v: f32, lo: f32, hi: f32, soft: f32| smoothstep(lo - soft, lo + soft, v) * (1.0 - smoothstep(hi - soft, hi + soft, v));
+    band(cr, 135.0, 172.0, 6.0) * band(cb, 80.0, 127.0, 6.0) * smoothstep(0.12, 0.28, y)
+}
+
+/// Làm mịn da (AYP): a self-guided filter (He et al.) on display-encoded colour, mixed in only on
+/// skin (soft [`skin_key`], optionally inside a feathered face ellipse). The guided filter flattens
+/// low-variance texture (blemishes, uneven tone) and keeps strong edges, so eyes, brows, lips and
+/// the face outline stay sharp.
+fn skin_smooth(img: &mut Image, e: &EffectInstance, cx: &FxCtx) {
+    let s = (f(e, "strength", cx) / 100.0).clamp(0.0, 1.0);
+    let light = (f(e, "brighten", cx) / 100.0).clamp(0.0, 1.0);
+    if !(s > 0.0 || light > 0.0) {
+        return;
+    }
+    let r = (f(e, "radius", cx) * cx.px_scale).round().clamp(1.0, 64.0);
+    let r = if r.is_finite() { r as u32 } else { 1 };
+    // edges whose local std-dev is well above sqrt(eps) survive; stronger flattens bigger bumps
+    let eps = (0.015 + 0.06 * s).powi(2);
+    let ellipse = b(e, "face_only").then(|| {
+        let c = point(e, "face_center", cx, img);
+        let rx = (f(e, "face_w", cx) * cx.px_scale / 2.0).max(1.0);
+        let ry = (f(e, "face_h", cx) * cx.px_scale / 2.0).max(1.0);
+        (c.x as f32, c.y as f32, rx, ry)
+    });
+    let (w, h) = (img.w, img.h);
+    // guide = straight display colour; the alpha slot carries the skin key (softened by the blurs)
+    let mut mean = Image::new(w, h);
+    mean.px.par_chunks_mut(4).zip(img.px.par_chunks(4)).for_each(|(o, p)| {
+        if p[3] > 0.0 {
+            let c = enc([p[0] / p[3], p[1] / p[3], p[2] / p[3]]);
+            o.copy_from_slice(&[c[0], c[1], c[2], skin_key(c)]);
+        }
+    });
+    let guide = mean.clone();
+    let mut sq = Image::new(w, h);
+    sq.px.par_chunks_mut(4).zip(guide.px.par_chunks(4)).for_each(|(o, g)| {
+        for k in 0..3 {
+            o[k] = g[k] * g[k];
+        }
+    });
+    box_blur(&mut mean, &[r], &[r], true);
+    box_blur(&mut sq, &[r], &[r], true);
+    // a = var / (var + eps) into `sq`, b = mean·(1 − a) into `mean` (alpha keeps the soft key)
+    sq.px.par_chunks_mut(4).zip(mean.px.par_chunks_mut(4)).for_each(|(a, m)| {
+        for k in 0..3 {
+            let var = (a[k] - m[k] * m[k]).max(0.0);
+            a[k] = var / (var + eps);
+            m[k] *= 1.0 - a[k];
+        }
+    });
+    box_blur(&mut sq, &[r], &[r], true);
+    box_blur(&mut mean, &[r], &[r], true);
+    img.px.par_chunks_mut(w * 4).enumerate().for_each(|(y, row)| {
+        for x in 0..w {
+            let p = &mut row[x * 4..x * 4 + 4];
+            let al = p[3];
+            if al <= 0.0 {
+                continue;
+            }
+            let i = (y * w + x) * 4;
+            let mut m = mean.px[i + 3];
+            if let Some((ex, ey, rx, ry)) = ellipse {
+                let d = (((x as f32 + 0.5 - ex) / rx).powi(2) + ((y as f32 + 0.5 - ey) / ry).powi(2)).sqrt();
+                m *= 1.0 - smoothstep(0.8, 1.1, d);
+            }
+            if m < 1e-3 {
+                continue;
+            }
+            let mut o = [0f32; 3];
+            for k in 0..3 {
+                let g = guide.px[i + k];
+                let q = sq.px[i + k] * g + mean.px[i + k];
+                let v = g + s * m * (q - g);
+                o[k] = v + light * 0.15 * m * (1.0 - v);
+            }
+            let o = dec(o);
+            for k in 0..3 {
+                p[k] = o[k] * al;
+            }
+        }
+    });
+}
+
 pub(crate) fn mosaic(img: &mut Image, bx: usize, by: usize) {
     let (w, h) = (img.w, img.h);
     let bw = (w as f32 / bx as f32).max(1.0);
@@ -960,6 +1055,35 @@ mod tests {
             apply(&mut img, &e, &cx());
             assert!(img.px.iter().all(|v| v.is_finite()), "{}", def.id);
         }
+    }
+
+    /// Làm mịn da flattens a faint blemish on skin, leaves a dark (hair) area alone and keeps the
+    /// skin/hair edge hard.
+    #[test]
+    fn skin_smooth_flattens_blemishes_and_keeps_edges() {
+        let (skin, spot, hair) = ([0.85, 0.64, 0.52], [0.88, 0.58, 0.50], [0.10, 0.07, 0.06]);
+        assert!(skin_key(skin) > 0.9 && skin_key(spot) > 0.5 && skin_key(hair) == 0.0);
+        let px = |c: [f32; 3]| {
+            let l = dec(c);
+            [l[0], l[1], l[2], 1.0]
+        };
+        let mut img = Image::new(64, 32);
+        for y in 0..32 {
+            for x in 0..64 {
+                let c = if x >= 40 { hair } else if (x / 3 + y / 3) % 2 == 0 && x < 30 { spot } else { skin };
+                img.px[(y * 64 + x) * 4..][..4].copy_from_slice(&px(c));
+            }
+        }
+        let before = img.clone();
+        let mut e = find_effect("skin_smooth").unwrap().instance();
+        e.param_mut("strength").unwrap().value = ParamValue::Float(100.0);
+        apply(&mut img, &e, &cx());
+        let red = |im: &Image, x: usize, y: usize| enc([im.get(x, y)[0], 0.0, 0.0])[0];
+        let spread = |im: &Image| (0..24).map(|x| red(im, x, 16)).fold((1f32, 0f32), |(lo, hi), v| (lo.min(v), hi.max(v)));
+        let ((b0, b1), (a0, a1)) = (spread(&before), spread(&img));
+        assert!(a1 - a0 < 0.4 * (b1 - b0), "blemish contrast {} -> {}", b1 - b0, a1 - a0);
+        assert_eq!(img.get(62, 16), before.get(62, 16), "hair untouched");
+        assert!(red(&img, 38, 16) - red(&img, 41, 16) > 0.7, "skin/hair edge stays hard");
     }
 
     #[test]
