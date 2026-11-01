@@ -1,3 +1,5 @@
+> **FilmCraft AYP**: bản fork có phụ đề tiếng Việt, 25 giọng VieNeu và menu Duyệt góp ý. Cách build và phần cài thêm xem ở **[AYP.md](AYP.md)**.
+
 <p align="center">
   <a href="https://getartcraft.com/">
     <picture>
