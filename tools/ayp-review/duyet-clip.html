@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Duyệt clip AYP</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Bố cục: phòng duyệt tối kiểu bàn dựng — player 9:16 bên trái, sổ góp ý bên phải; màn hẹp xếp dọc.
+   Màu nhấn = vàng phụ đề AYP. */
+:root {
+  color-scheme: dark;
+  --bg: #121418; --panel: #1a1d23; --raise: #23272f; --line: #2e333c;
+  --fg: #e9e7e1; --muted: #9097a3; --accent: #ffd200; --on-accent: #1a1600;
+  --done: #5fc48a; --danger: #ff7b6b;
+  --f-ui: "Be Vietnam Pro", system-ui, -apple-system, sans-serif;
+  --f-tc: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--fg); font: 14px/1.5 var(--f-ui); padding: 12px 16px 16px; }
+button, select, textarea, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+[hidden] { display: none !important; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tc { font-family: var(--f-tc); font-variant-numeric: tabular-nums; }
+.hint { color: var(--muted); font-size: 12px; }
+.btn { background: var(--raise); border: 1px solid var(--line); border-radius: 6px; padding: 4px 9px; min-width: 32px; }
+.btn:hover { border-color: var(--muted); }
+.btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+select { background: var(--raise); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+kbd { font-family: var(--f-tc); background: var(--raise); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; font-size: 12px; }
+
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 12px; }
+header h1 { font-size: 15px; margin: 0; }
+header h1 span { color: var(--accent); }
+#clip { min-width: 0; max-width: min(70vw, 640px); }
+.spacer { flex: 1; }
+
+main { display: grid; grid-template-columns: minmax(0, auto) minmax(320px, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 860px) { main { grid-template-columns: minmax(0, 1fr); } }
+.stage { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.stage:fullscreen { background: var(--bg); padding: 16px; justify-content: center; }
+.frame { position: relative; background: #000; border-radius: 8px; overflow: hidden; user-select: none; height: min(74vh, 900px); aspect-ratio: 9 / 16; max-width: 100%; margin-inline: auto; }
+.stage:fullscreen .frame { height: calc(100vh - 140px); }
+@media (max-width: 860px) { .frame { height: auto; width: min(100%, 420px); } }
+.frame video, .frame canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.frame video { object-fit: contain; }
+#hit { position: absolute; inset: 0; cursor: crosshair; touch-action: none; }
+.pin { position: absolute; width: 26px; height: 26px; margin-top: -26px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); transform-origin: 0 100%; background: var(--accent); border: 2px solid #000; pointer-events: none; display: grid; place-items: center; box-shadow: 0 2px 8px rgba(0,0,0,.5); }
+.pin b { transform: rotate(45deg); font-size: 11px; color: var(--on-accent); }
+.pin.done { background: var(--done); }
+.pin.draft { background: #fff; }
+.pin.sel { outline: 3px solid #fff; }
+.empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; color: var(--muted); background: var(--bg); }
+
+.track { position: relative; height: 38px; cursor: pointer; touch-action: none; }
+.rail, .fill { position: absolute; top: 17px; height: 4px; border-radius: 2px; }
+.rail { left: 0; right: 0; background: var(--line); }
+.fill { left: 0; background: var(--muted); }
+.range { position: absolute; top: 12px; height: 14px; background: rgba(255, 210, 0, .25); border: 1px solid var(--accent); border-radius: 3px; pointer-events: none; }
+.head { position: absolute; top: 4px; width: 2px; height: 30px; background: var(--accent); margin-left: -1px; pointer-events: none; }
+.mk { position: absolute; top: 10px; height: 18px; min-width: 10px; margin-left: -5px; border-radius: 3px; background: var(--accent); border: 1px solid #000; padding: 0; }
+.mk.span { margin-left: 0; opacity: .85; }
+.mk.done { background: var(--done); }
+.mk.sel { outline: 2px solid #fff; }
+.scrub { position: absolute; bottom: 40px; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px; display: grid; gap: 2px; justify-items: center; pointer-events: none; z-index: 2; }
+.scrub canvas { width: 72px; height: 128px; border-radius: 3px; background: #000; }
+.scrub span { font-size: 11px; }
+.bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.now { font-size: 15px; color: var(--accent); background: none; border: 0; padding: 0 2px; }
+.dur { color: var(--muted); font-size: 12px; }
+#vol { width: 70px; accent-color: var(--accent); }
+
+aside { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; display: flex; flex-direction: column; min-width: 0; max-height: calc(74vh + 100px); }
+@media (max-width: 860px) { aside { max-height: none; } }
+.compose { padding: 12px; border-bottom: 1px solid var(--line); display: grid; gap: 8px; }
+.at { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+.chip { background: var(--accent); color: var(--on-accent); border-radius: 4px; padding: 1px 6px; font-size: 12px; }
+.x { background: none; border: 0; color: var(--muted); padding: 0 4px; }
+.tools { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+.sw { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--line); padding: 0; }
+.sw[aria-pressed="true"] { border-color: var(--fg); }
+textarea { width: 100%; min-height: 64px; resize: vertical; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+.row { display: flex; gap: 8px; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+.primary { background: var(--accent); color: var(--on-accent); border: 0; border-radius: 6px; padding: 6px 14px; font-weight: 700; }
+.primary:disabled { opacity: .4; cursor: default; }
+.panelbar { display: flex; gap: 2px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+.panelbar button { background: none; border: 1px solid transparent; border-radius: 6px; padding: 2px 8px; color: var(--muted); }
+.panelbar button[aria-pressed="true"] { border-color: var(--line); color: var(--fg); background: var(--raise); }
+.list { list-style: none; margin: 0; padding: 0; overflow-y: auto; }
+.item { padding: 10px 12px; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; cursor: pointer; }
+.item:hover, .item.sel { background: var(--raise); }
+.item.sel { box-shadow: inset 3px 0 0 var(--accent); }
+.n { width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; font-size: 11px; font-weight: 700; }
+.item.done .n { background: var(--done); }
+.item.done .txt { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--line); }
+.meta { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+.meta .tc { color: var(--accent); }
+.check { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
+.check input { accent-color: var(--done); margin: 0; }
+.txt { white-space: pre-wrap; overflow-wrap: anywhere; }
+.reply { grid-column: 2; font-size: 13px; color: var(--done); border-left: 2px solid var(--done); padding-left: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.del { grid-column: 2; justify-self: start; background: none; border: 1px solid var(--line); border-radius: 5px; padding: 0 8px; font-size: 12px; color: var(--muted); }
+.del.arm { color: var(--danger); border-color: var(--danger); }
+.blank { padding: 20px 12px; color: var(--muted); }
+.foot { padding: 8px 12px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.toast { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); background: var(--raise); border: 1px solid var(--line); padding: 8px 14px; border-radius: 8px; z-index: 10; }
+dialog { background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 10px; max-width: min(520px, calc(100vw - 32px)); }
+dialog::backdrop { background: rgba(0, 0, 0, .55); }
+dialog td { padding: 3px 8px; border-bottom: 1px solid var(--line); font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Duyệt clip <span>AYP</span></h1>
+  <select id="clip" aria-label="Chọn clip"></select>
+  <button class="btn" id="reload" title="Quét lại thư mục render">↻</button>
+  <span class="spacer"></span>
+  <button class="btn" id="helpBtn" title="Phím tắt (?)">?</button>
+</header>
+
+<main>
+  <section class="stage" id="stage">
+    <div class="frame">
+      <video id="video" playsinline preload="auto"></video>
+      <canvas id="guides"></canvas>
+      <canvas id="ink"></canvas>
+      <div id="pins"></div>
+      <div id="hit"></div>
+      <div class="empty" id="empty">Đang tìm clip trong thư mục render…</div>
+    </div>
+    <div class="track" id="track" aria-label="Thanh thời gian">
+      <div class="rail"></div><div class="fill" id="fill"></div><div id="marks"></div><div class="range" id="draftRange" hidden></div><div class="head" id="head"></div>
+      <div class="scrub" id="scrub" hidden><canvas id="thumb" width="144" height="256"></canvas><span class="tc" id="scrubTc"></span></div>
+    </div>
+    <div class="bar">
+      <button class="btn" id="back" title="Lùi 1 khung (←)">◀︎|</button>
+      <button class="btn" id="play" title="Phát / dừng (Space)">▶︎</button>
+      <button class="btn" id="fwd" title="Tới 1 khung (→)">|▶︎</button>
+      <button class="tc now" id="now" title="Đổi kiểu hiển thị thời gian">00:00:00</button><span class="tc dur" id="dur">/ 00:00:00</span>
+      <span class="spacer"></span>
+      <select id="rate" aria-label="Tốc độ phát"><option>0.25</option><option>0.5</option><option selected>1</option><option>1.5</option><option>2</option></select>
+      <button class="btn" id="loop" aria-pressed="false" title="Lặp lại">⟲</button>
+      <button class="btn" id="mute" title="Tắt tiếng (M)">🔊</button><input type="range" id="vol" min="0" max="1" step="0.05" value="1" aria-label="Âm lượng">
+      <select id="guide" aria-label="Vùng an toàn" title="Vùng an toàn (G)"><option value="">Vùng an toàn: tắt</option><option value="tiktok">TikTok</option><option value="reels">Reels</option><option value="shorts">Shorts</option></select>
+      <button class="btn" id="fs" title="Toàn màn hình (F)">⛶</button>
+    </div>
+    <div class="hint">Kéo trên thanh thời gian để chọn đoạn (hoặc <kbd>I</kbd> / <kbd>O</kbd>) · bấm lên video để ghim vị trí · <kbd>?</kbd> phím tắt</div>
+  </section>
+
+  <aside>
+    <form class="compose" id="compose">
+      <div class="at"><span>Góp ý</span><span class="chip tc" id="atTc">—</span><span class="tc" id="atEnd"></span><button type="button" class="x" id="clearRange" title="Bỏ điểm ra" hidden>×</button><span id="atPin"></span></div>
+      <div class="tools" id="tools">
+        <button type="button" class="btn" data-tool="pen" aria-pressed="false" title="Vẽ tự do (P)">✎</button>
+        <button type="button" class="btn" data-tool="arrow" aria-pressed="false" title="Mũi tên (A)">↗</button>
+        <button type="button" class="btn" data-tool="rect" aria-pressed="false" title="Khung (R)">▭</button>
+        <span class="tools" id="swatches"></span>
+        <button type="button" class="btn" id="undoInk" title="Hoàn tác nét vẽ (⌘Z)">↶</button>
+      </div>
+      <textarea id="text" placeholder="Cần sửa gì? Ví dụ: cắt bỏ đoạn ậm ừ này / phụ đề ngắt sai, gộp 2 dòng" aria-label="Nội dung góp ý"></textarea>
+      <div class="row"><span class="hint">Enter gửi · Shift+Enter xuống dòng · Esc huỷ</span><button class="primary" id="send" disabled>Ghim góp ý</button></div>
+    </form>
+    <div class="panelbar" id="filters">
+      <button type="button" data-f="open" aria-pressed="true">Đang mở</button>
+      <button type="button" data-f="done" aria-pressed="false">Đã sửa</button>
+      <button type="button" data-f="all" aria-pressed="false">Tất cả</button>
+    </div>
+    <ul class="list" id="list"></ul>
+    <div class="foot" id="foot"></div>
+  </aside>
+</main>
+
+<dialog id="help">
+  <h3 style="margin:0 0 8px">Phím tắt</h3>
+  <table>
+    <tr><td><kbd>Space</kbd> / <kbd>K</kbd></td><td>Phát / dừng</td></tr>
+    <tr><td><kbd>L</kbd> · <kbd>J</kbd></td><td>Phát tới (nhấn nữa: 2x, 4x) · tua lùi</td></tr>
+    <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Lùi / tới 1 khung · thêm <kbd>Shift</kbd>: 10 khung</td></tr>
+    <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Góp ý trước / sau</td></tr>
+    <tr><td><kbd>I</kbd> · <kbd>O</kbd></td><td>Điểm vào / ra của đoạn cần sửa</td></tr>
+    <tr><td><kbd>C</kbd></td><td>Viết góp ý tại khung hiện tại</td></tr>
+    <tr><td><kbd>P</kbd> <kbd>A</kbd> <kbd>R</kbd></td><td>Bút vẽ · mũi tên · khung</td></tr>
+    <tr><td><kbd>G</kbd></td><td>Vùng an toàn TikTok / Reels / Shorts</td></tr>
+    <tr><td><kbd>M</kbd> · <kbd>F</kbd></td><td>Tắt tiếng · toàn màn hình</td></tr>
+    <tr><td><kbd>Esc</kbd></td><td>Huỷ góp ý đang viết / bỏ chọn</td></tr>
+  </table>
+  <p class="hint">Vùng an toàn là ước lượng phần bị giao diện app che, để kiểm tra phụ đề không bị che.</p>
+  <form method="dialog" class="row"><span></span><button class="primary">Đóng</button></form>
+</dialog>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+const FPS = 25;
+const COLORS = ["#ffd200", "#ff5a4f", "#4fd1ff", "#5fc48a", "#ffffff"];
+const $ = id => document.getElementById(id);
+const video = $("video");
+const S = { clips: [], path: null, items: [], draft: null, sel: null, filter: "open", tool: null, color: COLORS[0], tcMode: 0 };
+
+// ---------- thời gian ----------
+const frameOf = t => Math.floor(t * FPS + 1e-6);
+const tcF = f => { const s = Math.floor(f / FPS); return [Math.floor(s / 60), s % 60, f % FPS].map(n => String(n).padStart(2, "0")).join(":"); };
+const tcOf = t => tcF(frameOf(t));
+const showT = t => [tcOf(t), "khung " + frameOf(t), t.toFixed(2) + " s"][S.tcMode];
+const dur = () => (isFinite(video.duration) && video.duration) || 0;
+const seek = t => { video.currentTime = Math.max(0, Math.min(t, dur() - 1 / FPS)); };
+const seekFrame = f => seek((f + 0.5) / FPS);
+const toast = m => { const el = $("toast"); el.textContent = m; el.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => el.hidden = true, 2600); };
+const sorted = () => [...S.items].sort((a, b) => a.frame - b.frame || a.created.localeCompare(b.created));
+const nums = () => new Map(sorted().map((c, i) => [c.id, i + 1]));
+const store = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+const recall = k => { try { return localStorage.getItem(k); } catch { return null; } };
+
+// ---------- API local ----------
+async function api(method, route, body) {
+  const r = await fetch(route, { method, headers: body ? { "Content-Type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+const q = (extra = "") => "?path=" + encodeURIComponent(S.path) + extra;
+
+async function loadClips() {
+  try {
+    const { root, clips } = await api("GET", "/api/clips");
+    S.clips = clips;
+    const want = S.path || new URLSearchParams(location.search).get("clip") || recall("clip"); // ?clip= từ FilmCraft (Sequence ▸ Duyệt góp ý)
+    S.path = clips.some(c => c.path === want) ? want : clips[0]?.path ?? null;
+    $("clip").replaceChildren(...clips.map(c => new Option(`${c.folder} / ${c.name}${c.open ? ` · ${c.open} mở` : ""}`, c.path, false, c.path === S.path)));
+    $("empty").textContent = clips.length ? "" : "Không thấy file .mp4 nào trong " + root;
+    openClip();
+  } catch (e) { $("empty").textContent = "Không đọc được thư mục render: " + e.message; }
+}
+async function loadItems() {
+  if (!S.path) return;
+  try {
+    const { items } = await api("GET", "/api/feedback" + q());
+    if (JSON.stringify(items) !== JSON.stringify(S.items)) { S.items = items; if (S.sel && !items.some(i => i.id === S.sel)) S.sel = null; renderAll(); }
+  } catch {}
+}
+function openClip() {
+  $("empty").hidden = !!S.path;
+  if (!S.path) return;
+  store("clip", S.path);
+  $("foot").textContent = "Góp ý lưu tại: " + S.path.split("/").pop() + ".feedback.json (cạnh file clip)";
+  const src = "/video" + q();
+  if (video.getAttribute("src") !== src) { video.src = src; thumbV.src = src; S.items = []; S.sel = S.draft = null; }
+  loadItems(); renderAll();
+}
+setInterval(loadItems, 4000); // nhận thay đổi khi Claude đánh dấu đã sửa
+addEventListener("focus", loadItems);
+
+// ---------- vẽ ----------
+function fit(cv) {
+  const r = cv.getBoundingClientRect(), k = devicePixelRatio || 1;
+  if (cv.width !== Math.round(r.width * k)) { cv.width = Math.round(r.width * k); cv.height = Math.round(r.height * k); }
+  return cv.getContext("2d");
+}
+// Phần bị giao diện app che trên khung 1080x1920 (ước lượng)
+const GUIDES = { tiktok: [.07, .22, .06, .14], reels: [.14, .35, .06, .06], shorts: [.12, .25, .06, .15] };
+function drawGuides() {
+  const cv = $("guides"), ctx = fit(cv), W = cv.width, H = cv.height, g = GUIDES[$("guide").value];
+  ctx.clearRect(0, 0, W, H);
+  if (!g) return;
+  const [t, b, l, r] = g, x = l * W, y = t * H, w = W - x - r * W, h = H - y - b * H;
+  ctx.fillStyle = "rgba(255,60,60,.22)"; ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.rect(x, y, w, h); ctx.fill("evenodd");
+  ctx.setLineDash([6, 4].map(n => n * devicePixelRatio)); ctx.strokeStyle = "rgba(255,255,255,.8)"; ctx.strokeRect(x, y, w, h);
+}
+function shape(ctx, s, W, H) {
+  const k = devicePixelRatio || 1, P = s.pts.map(([x, y]) => [x * W, y * H]);
+  ctx.strokeStyle = s.color; ctx.lineWidth = 3.5 * k; ctx.lineCap = ctx.lineJoin = "round"; ctx.setLineDash([]);
+  if (P.length < 2) return;
+  ctx.beginPath();
+  if (s.tool === "pen") { P.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.stroke(); return; }
+  const a = P[0], b = P[P.length - 1];
+  if (s.tool === "rect") { ctx.strokeRect(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])); return; }
+  const ang = Math.atan2(b[1] - a[1], b[0] - a[0]), L = 16 * k;
+  ctx.moveTo(...a); ctx.lineTo(...b);
+  for (const d of [-.45, .45]) { ctx.moveTo(...b); ctx.lineTo(b[0] - L * Math.cos(ang + d), b[1] - L * Math.sin(ang + d)); }
+  ctx.stroke();
+}
+const inSpan = (c, f, pad) => f >= c.frame - pad && f <= (c.frameEnd ?? c.frame) + pad;
+function renderOverlay() {
+  const f = frameOf(video.currentTime || 0), n = nums();
+  const box = $("pins"); box.replaceChildren();
+  const pin = (x, y, cls, label) => { const p = document.createElement("div"); p.className = "pin " + cls; p.style.left = x * 100 + "%"; p.style.top = y * 100 + "%"; if (label) p.innerHTML = `<b>${label}</b>`; box.append(p); };
+  for (const c of S.items) if (c.x != null && (inSpan(c, f, 12) || c.id === S.sel)) pin(c.x, c.y, (c.status === "done" ? "done" : "") + (c.id === S.sel ? " sel" : ""), n.get(c.id));
+  if (S.draft?.x != null) pin(S.draft.x, S.draft.y, "draft");
+  // nét vẽ chỉ hiện khi góp ý đang được chọn (như frame.io) hoặc đang viết
+  const cv = $("ink"), ctx = fit(cv); ctx.clearRect(0, 0, cv.width, cv.height);
+  const sel = S.items.find(c => c.id === S.sel);
+  if (sel && inSpan(sel, f, 2)) sel.draw.forEach(s => shape(ctx, s, cv.width, cv.height));
+  S.draft?.draw.forEach(s => shape(ctx, s, cv.width, cv.height));
+}
+
+// ---------- thanh thời gian ----------
+function renderTime() {
+  const d = dur(), t = video.currentTime || 0, pct = d ? t / d * 100 : 0;
+  $("now").textContent = showT(t); $("dur").textContent = "/ " + showT(d);
+  $("fill").style.width = pct + "%"; $("head").style.left = pct + "%";
+  $("play").textContent = video.paused && !shuttle ? "▶︎" : "❚❚";
+  const r = $("draftRange"), D = S.draft;
+  r.hidden = !(D && D.fe != null && d);
+  if (!r.hidden) { r.style.left = D.f / FPS / d * 100 + "%"; r.style.width = (D.fe - D.f) / FPS / d * 100 + "%"; }
+  renderOverlay();
+}
+function renderMarks() {
+  const d = dur(), box = $("marks"), n = nums(); box.replaceChildren();
+  if (!d) return;
+  for (const c of sorted()) {
+    const m = document.createElement("button");
+    m.className = "mk" + (c.frameEnd != null ? " span" : "") + (c.status === "done" ? " done" : "") + (c.id === S.sel ? " sel" : "");
+    m.style.left = c.t / d * 100 + "%";
+    if (c.frameEnd != null) m.style.width = (c.tEnd - c.t) / d * 100 + "%";
+    m.title = `#${n.get(c.id)} ${c.tc}${c.tcEnd ? " → " + c.tcEnd : ""} ${c.text}`;
+    m.onpointerdown = e => e.stopPropagation();
+    m.onclick = e => { e.stopPropagation(); select(c.id); };
+    box.append(m);
+  }
+}
+
+// ---------- ô viết góp ý ----------
+function renderCompose() {
+  const D = S.draft;
+  $("compose").hidden = !S.path;
+  $("atTc").textContent = D ? tcF(D.f) : "bấm video hoặc kéo thanh thời gian";
+  $("atEnd").textContent = D?.fe != null ? "→ " + tcF(D.fe) : D ? "(nhấn O hoặc kéo để chọn đoạn)" : "";
+  $("clearRange").hidden = D?.fe == null;
+  $("atPin").textContent = [D?.x != null && "· có ghim", D?.draw.length && `· ${D.draw.length} nét vẽ`].filter(Boolean).join(" ");
+  $("send").disabled = !D || !($("text").value.trim() || D.draw.length);
+  for (const b of $("tools").querySelectorAll("[data-tool]")) b.setAttribute("aria-pressed", b.dataset.tool === S.tool);
+  for (const b of $("swatches").children) b.setAttribute("aria-pressed", b.dataset.c === S.color);
+}
+$("swatches").append(...COLORS.map(c => { const b = document.createElement("button"); b.type = "button"; b.className = "sw"; b.style.background = c; b.dataset.c = c; b.title = "Màu nét vẽ"; b.onclick = () => { S.color = c; renderCompose(); }; return b; }));
+
+function ensureDraft() {
+  if (!S.path || !dur()) return false;
+  if (!S.draft) { pause(); S.draft = { f: frameOf(video.currentTime), fe: null, x: null, y: null, draw: [] }; S.sel = null; renderList(); renderMarks(); }
+  return true;
+}
+const setTool = t => { S.tool = S.tool === t ? null : t; if (S.tool) ensureDraft(); renderCompose(); renderTime(); };
+function cancelDraft() { S.draft = null; S.tool = null; $("text").value = ""; renderCompose(); renderTime(); }
+
+async function send() {
+  const D = S.draft, text = $("text").value.trim();
+  if (!D || !(text || D.draw.length)) return;
+  cancelDraft(); // dọn ngay để góp ý kế tiếp không dính vào góp ý đang gửi
+  try {
+    const it = await api("POST", "/api/feedback" + q(), {
+      frame: D.f, frameEnd: D.fe, text,
+      x: D.x == null ? null : +D.x.toFixed(4), y: D.y == null ? null : +D.y.toFixed(4),
+      draw: D.draw.map(s => ({ tool: s.tool, color: s.color, pts: s.pts.map(p => p.map(v => +v.toFixed(4))) })),
+    });
+    S.items = [...S.items, it]; renderAll(); toast("Đã ghim góp ý " + it.tc + (it.tcEnd ? " → " + it.tcEnd : ""));
+  } catch (e) { S.draft = D; $("text").value = text; renderCompose(); renderTime(); toast("Chưa lưu được: " + e.message); }
+}
+
+// ---------- danh sách ----------
+function renderList() {
+  const ul = $("list"), all = sorted(), n = nums();
+  const cs = all.filter(c => S.filter === "all" || (S.filter === "done") === (c.status === "done"));
+  const open = all.filter(c => c.status !== "done").length;
+  $("filters").children[0].textContent = `Đang mở${open ? " · " + open : ""}`;
+  if (!cs.length) {
+    const li = document.createElement("li"); li.className = "blank";
+    li.textContent = !S.path ? "Chưa chọn clip." : all.length ? (S.filter === "open" ? "Không còn góp ý nào đang mở." : "Không có góp ý nào ở mục này.") : "Chưa có góp ý. Kéo trên thanh thời gian để chọn đoạn, rồi ghi cần sửa gì.";
+    ul.replaceChildren(li); return;
+  }
+  ul.replaceChildren(...cs.map(c => {
+    const li = document.createElement("li");
+    li.className = "item" + (c.status === "done" ? " done" : "") + (c.id === S.sel ? " sel" : "");
+    li.tabIndex = 0; li.dataset.id = c.id;
+    li.innerHTML = `<div class="n"></div><div><div class="meta"><span class="tc"></span><span class="ink"></span><label class="check"><input type="checkbox"> Đã sửa</label></div><div class="txt"></div></div>`;
+    li.querySelector(".n").textContent = n.get(c.id);
+    li.querySelector(".tc").textContent = c.tc + (c.tcEnd ? " → " + c.tcEnd : "");
+    li.querySelector(".ink").textContent = [c.x != null && "📍", c.draw.length && "✎"].filter(Boolean).join(" ");
+    li.querySelector(".txt").textContent = c.text;
+    const cb = li.querySelector("input"); cb.checked = c.status === "done";
+    cb.onclick = e => e.stopPropagation();
+    cb.onchange = () => patch(c, { status: cb.checked ? "done" : "open" });
+    if (c.reply) { const r = document.createElement("div"); r.className = "reply"; r.textContent = "Claude: " + c.reply; li.append(r); }
+    const del = document.createElement("button"); del.type = "button"; del.className = "del"; del.textContent = "Xoá";
+    del.onclick = e => { e.stopPropagation(); if (del.classList.contains("arm")) remove(c); else { del.classList.add("arm"); del.textContent = "Bấm lần nữa để xoá"; setTimeout(() => { del.classList.remove("arm"); del.textContent = "Xoá"; }, 3000); } };
+    li.append(del);
+    li.onclick = () => select(c.id);
+    li.onkeydown = e => { if (e.key === "Enter" && e.target === li) select(c.id); };
+    return li;
+  }));
+}
+async function patch(c, body) {
+  try { const it = await api("PATCH", "/api/feedback" + q("&id=" + c.id), body); S.items = S.items.map(x => x.id === c.id ? it : x); renderAll(); }
+  catch (e) { toast("Chưa lưu được: " + e.message); }
+}
+async function remove(c) {
+  try { await api("DELETE", "/api/feedback" + q("&id=" + c.id)); S.items = S.items.filter(x => x.id !== c.id); if (S.sel === c.id) S.sel = null; renderAll(); toast("Đã xoá góp ý"); }
+  catch (e) { toast("Chưa xoá được: " + e.message); }
+}
+function select(id) {
+  const c = S.items.find(x => x.id === id); if (!c) return;
+  S.sel = id; S.draft = null; S.tool = null; pause(); seekFrame(c.frame);
+  renderAll(); $("list").querySelector(`[data-id="${id}"]`)?.scrollIntoView({ block: "nearest" });
+}
+function stepComment(dir) {
+  const cs = sorted(); if (!cs.length) return;
+  const i = cs.findIndex(c => c.id === S.sel), f = frameOf(video.currentTime);
+  const nx = i >= 0 ? cs[i + dir] : dir > 0 ? cs.find(c => c.frame > f) : [...cs].reverse().find(c => c.frame < f);
+  if (nx) select(nx.id);
+}
+function renderAll() { renderCompose(); renderList(); renderMarks(); renderTime(); }
+
+// ---------- phát ----------
+let shuttle = 0, last = 0;
+function pause() { shuttle = 0; video.pause(); }
+function playFwd(faster) {
+  shuttle = 0;
+  video.playbackRate = faster && !video.paused ? Math.min(video.playbackRate * 2, 4) : +$("rate").value;
+  if (S.draft && !$("text").value.trim() && !S.draft.draw.length) cancelDraft();
+  video.play();
+}
+function playBack() { video.pause(); shuttle = shuttle ? Math.min(shuttle * 2, 4) : 1; last = performance.now(); }
+const step = n => { pause(); seekFrame(frameOf(video.currentTime) + n); };
+$("play").onclick = () => (video.paused && !shuttle ? playFwd() : pause());
+$("back").onclick = () => step(-1); $("fwd").onclick = () => step(1);
+$("now").onclick = () => { S.tcMode = (S.tcMode + 1) % 3; renderTime(); };
+$("rate").onchange = () => { video.playbackRate = +$("rate").value; };
+$("loop").onclick = () => { video.loop = !video.loop; $("loop").setAttribute("aria-pressed", video.loop); };
+const syncVol = () => { $("mute").textContent = video.muted || !video.volume ? "🔇" : "🔊"; };
+$("mute").onclick = () => { video.muted = !video.muted; syncVol(); };
+$("vol").oninput = () => { video.volume = +$("vol").value; video.muted = false; syncVol(); };
+$("fs").onclick = () => document.fullscreenElement ? document.exitFullscreen() : $("stage").requestFullscreen?.();
+$("guide").onchange = drawGuides;
+const relayout = () => requestAnimationFrame(() => { drawGuides(); renderOverlay(); });
+document.addEventListener("fullscreenchange", relayout); addEventListener("resize", relayout);
+["timeupdate", "seeked", "play", "pause"].forEach(ev => video.addEventListener(ev, renderTime));
+video.addEventListener("loadedmetadata", () => { renderMarks(); renderTime(); relayout(); });
+video.addEventListener("error", () => toast("Không phát được clip này."));
+(function tick(now) {
+  if (shuttle) { const t = video.currentTime - (now - last) / 1000 * shuttle; last = now; if (t <= 0) { shuttle = 0; seek(0); } else video.currentTime = t; }
+  const sel = S.items.find(c => c.id === S.sel);
+  if (!video.paused && sel?.frameEnd != null && frameOf(video.currentTime) > sel.frameEnd) seekFrame(sel.frame); // chọn góp ý theo đoạn = phát lặp trong đoạn
+  if (!video.paused || shuttle) renderTime();
+  requestAnimationFrame(tick);
+})(performance.now());
+
+// ---------- bấm / vẽ trên video ----------
+const hit = $("hit");
+let stroke = null;
+const rel = e => { const r = hit.getBoundingClientRect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height].map(v => Math.max(0, Math.min(1, v))); };
+hit.addEventListener("pointerdown", e => {
+  e.preventDefault(); // giữ focus trong ô viết
+  if (!ensureDraft()) return;
+  if (S.tool) { hit.setPointerCapture(e.pointerId); stroke = { tool: S.tool, color: S.color, pts: [rel(e)] }; S.draft.draw.push(stroke); return; }
+  [S.draft.x, S.draft.y] = rel(e); renderCompose(); renderTime(); $("text").focus();
+});
+hit.addEventListener("pointermove", e => { if (!stroke) return; const p = rel(e); stroke.tool === "pen" ? stroke.pts.push(p) : stroke.pts[1] = p; renderOverlay(); });
+hit.addEventListener("pointerup", () => { if (!stroke) return; if (stroke.pts.length < 2) S.draft.draw.pop(); stroke = null; renderCompose(); renderOverlay(); });
+$("tools").addEventListener("click", e => { const b = e.target.closest("[data-tool]"); if (b) setTool(b.dataset.tool); });
+const undoInk = () => { S.draft?.draw.pop(); renderCompose(); renderOverlay(); };
+$("undoInk").onclick = undoInk;
+
+// ---------- thanh thời gian: kéo chọn đoạn, xem trước khung ----------
+const thumbV = document.createElement("video"); thumbV.muted = true; thumbV.preload = "auto";
+let drag = null, busy = false, want = null;
+const track = $("track");
+const trackT = e => { const r = track.getBoundingClientRect(); return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * dur(); };
+function hover(e) {
+  if (!dur()) return;
+  const t = trackT(e), r = track.getBoundingClientRect(), sc = $("scrub");
+  sc.hidden = false; sc.style.left = Math.max(44, Math.min(r.width - 44, e.clientX - r.left)) + "px"; $("scrubTc").textContent = tcOf(t);
+  want = t; if (!busy) { busy = true; thumbV.currentTime = t; }
+}
+thumbV.addEventListener("seeked", () => {
+  const cv = $("thumb"); cv.getContext("2d").drawImage(thumbV, 0, 0, cv.width, cv.height);
+  if (want != null && Math.abs(want - thumbV.currentTime) > .2) thumbV.currentTime = want; else busy = false;
+});
+track.addEventListener("pointerdown", e => { if (!dur()) return; drag = { t0: trackT(e) }; track.setPointerCapture(e.pointerId); pause(); seek(drag.t0); });
+track.addEventListener("pointermove", e => { hover(e); if (drag) { seek(trackT(e)); drag.moved ||= Math.abs(trackT(e) - drag.t0) > 2 / FPS; } });
+track.addEventListener("pointerleave", () => { if (!drag) $("scrub").hidden = true; });
+track.addEventListener("pointerup", e => {
+  if (!drag) return;
+  const t1 = trackT(e), { t0, moved } = drag; drag = null; $("scrub").hidden = true;
+  if (!moved) { if (S.draft) { S.draft.f = frameOf(t1); if (S.draft.fe != null && S.draft.fe <= S.draft.f) S.draft.fe = null; renderCompose(); renderTime(); } return; }
+  if (!ensureDraft()) return;
+  S.draft.f = frameOf(Math.min(t0, t1)); S.draft.fe = frameOf(Math.max(t0, t1));
+  seekFrame(S.draft.f); renderCompose(); renderTime(); $("text").focus();
+});
+$("clearRange").onclick = () => { if (S.draft) { S.draft.fe = null; renderCompose(); renderTime(); } };
+function markIn() { if (!ensureDraft()) return; S.draft.f = frameOf(video.currentTime); if (S.draft.fe != null && S.draft.fe <= S.draft.f) S.draft.fe = null; renderCompose(); renderTime(); }
+function markOut() { if (!ensureDraft()) return; const f = frameOf(video.currentTime); f > S.draft.f ? S.draft.fe = f : toast("Điểm ra phải sau điểm vào " + tcF(S.draft.f)); renderCompose(); renderTime(); }
+
+// ---------- phím tắt ----------
+document.addEventListener("keydown", e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === "z" && S.draft?.draw.length && e.target.id !== "text") { e.preventDefault(); undoInk(); return; }
+  if (e.target.matches("textarea, input, select") || e.metaKey || e.ctrlKey || e.altKey) { if (e.key === "Escape" && e.target.id === "text") { cancelDraft(); e.target.blur(); } return; }
+  if ($("help").open) return;
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  const map = {
+    " ": () => $("play").click(), k: pause, l: () => playFwd(true), j: playBack,
+    ArrowLeft: () => step(e.shiftKey ? -10 : -1), ArrowRight: () => step(e.shiftKey ? 10 : 1),
+    ArrowUp: () => stepComment(-1), ArrowDown: () => stepComment(1),
+    i: markIn, o: markOut, c: () => { if (ensureDraft()) { renderAll(); $("text").focus(); } },
+    p: () => setTool("pen"), a: () => setTool("arrow"), r: () => setTool("rect"),
+    m: () => $("mute").click(), f: () => $("fs").click(), "?": () => $("help").showModal(),
+    Escape: () => { if (S.draft) cancelDraft(); else if (S.sel) { S.sel = null; renderAll(); } },
+    g: () => { const s = $("guide"); s.selectedIndex = (s.selectedIndex + 1) % s.options.length; drawGuides(); toast(s.options[s.selectedIndex].text); },
+  };
+  if (map[k]) { e.preventDefault(); map[k](); }
+});
+$("helpBtn").onclick = () => $("help").showModal();
+$("text").addEventListener("focus", () => { if (ensureDraft()) renderAll(); });
+$("text").addEventListener("input", renderCompose);
+$("text").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } });
+$("compose").addEventListener("submit", e => { e.preventDefault(); send(); });
+$("clip").onchange = () => { S.path = $("clip").value; openClip(); };
+$("reload").onclick = loadClips;
+$("filters").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; S.filter = b.dataset.f; for (const x of $("filters").children) x.setAttribute("aria-pressed", x === b); renderList(); });
+
+loadClips();
+</script>
+</body>
+</html>

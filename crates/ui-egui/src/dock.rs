@@ -374,7 +374,9 @@ pub fn workspace(name: &str) -> DockNode {
             hsplit(
                 FixedB(450.0),
                 hsplit(Ratio(0.5), tabs(&[Source, EffectControls, AudioClipMixer, Metadata], 0), tabs(&[Program], 0)),
-                tabs(&[Properties, EssentialGraphics, Text], 0),
+                // AYP: Text to Speech (giọng VieNeu) có sẵn trong Editing — bố cục không được lưu
+                // khi tắt app, nên panel người dùng tự mở sẽ mất mỗi lần mở lại
+                tabs(&[Properties, EssentialGraphics, Text, TextToSpeech], 0),
             ),
             hsplit(
                 Ratio(0.29),
@@ -928,6 +930,12 @@ mod tests {
             assert!(d.contains(PanelKind::Timeline), "{w}");
             assert!(d.contains(PanelKind::Program), "{w}");
         }
+    }
+
+    /// AYP: Editing (the workspace the app reopens in) always has Text to Speech.
+    #[test]
+    fn editing_has_text_to_speech() {
+        assert!(workspace("Editing").contains(PanelKind::TextToSpeech));
     }
 
     #[test]

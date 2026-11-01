@@ -12,6 +12,7 @@
 
 pub mod aaf_omf;
 pub mod autosave;
+pub mod ayp_review;
 pub mod caption_presets;
 pub mod captions;
 pub mod clip_ops;

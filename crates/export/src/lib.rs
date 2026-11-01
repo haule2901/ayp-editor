@@ -556,7 +556,8 @@ impl Default for ExportSettings {
             include_audio: true,
             quality: 90,
             bitrate_kbps: 20_000,
-            burn_captions: false,
+            // AYP: short luôn cần phụ đề trong hình — mặc định ghi phụ đề vào video (chọn lại được ở Export ▸ Captions)
+            burn_captions: true,
             part_of_batch: false,
             prores_profile: String::new(),
             dnx_profile: String::new(),
