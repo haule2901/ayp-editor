@@ -58,7 +58,12 @@ main { display: grid; grid-template-columns: minmax(0, auto) minmax(320px, 1fr);
 .rail, .fill { position: absolute; top: 17px; height: 4px; border-radius: 2px; }
 .rail { left: 0; right: 0; background: var(--line); }
 .fill { left: 0; background: var(--muted); }
-.range { position: absolute; top: 12px; height: 14px; background: rgba(255, 210, 0, .25); border: 1px solid var(--accent); border-radius: 3px; pointer-events: none; }
+.range { position: absolute; top: 12px; height: 14px; background: rgba(255, 210, 0, .25); border: 1px solid var(--accent); border-left-width: 3px; border-right-width: 3px; border-radius: 3px; pointer-events: none; }
+.segs { position: relative; height: 22px; margin-top: -4px; }
+.sg { position: absolute; top: 0; height: 20px; padding: 0 4px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 11px; line-height: 20px; text-align: left; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 3px; cursor: pointer; }
+.sg.q { background: transparent; border-style: dashed; }
+.sg.on { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }
+.tcin { width: 76px; padding: 2px 6px; font: inherit; color: var(--fg, inherit); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; }
 .head { position: absolute; top: 4px; width: 2px; height: 30px; background: var(--accent); margin-left: -1px; pointer-events: none; }
 .mk { position: absolute; top: 10px; height: 18px; min-width: 10px; margin-left: -5px; border-radius: 3px; background: var(--accent); border: 1px solid #000; padding: 0; }
 .mk.span { margin-left: 0; opacity: .85; }
@@ -134,6 +139,7 @@ dialog td { padding: 3px 8px; border-bottom: 1px solid var(--line); font-size: 1
       <div class="rail"></div><div class="fill" id="fill"></div><div id="marks"></div><div class="range" id="draftRange" hidden></div><div class="head" id="head"></div>
       <div class="scrub" id="scrub" hidden><canvas id="thumb" width="144" height="256"></canvas><span class="tc" id="scrubTc"></span></div>
     </div>
+    <div class="segs" id="segs" aria-label="Các đoạn cắt" hidden></div>
     <div class="bar">
       <button class="btn" id="back" title="Lùi 1 khung (←)">◀︎|</button>
       <button class="btn" id="play" title="Phát / dừng (Space)">▶︎</button>
@@ -146,12 +152,12 @@ dialog td { padding: 3px 8px; border-bottom: 1px solid var(--line); font-size: 1
       <select id="guide" aria-label="Vùng an toàn" title="Vùng an toàn (G)"><option value="">Vùng an toàn: tắt</option><option value="tiktok">TikTok</option><option value="reels">Reels</option><option value="shorts">Shorts</option></select>
       <button class="btn" id="fs" title="Toàn màn hình (F)">⛶</button>
     </div>
-    <div class="hint">Kéo trên thanh thời gian để chọn đoạn (hoặc <kbd>I</kbd> / <kbd>O</kbd>) · bấm lên video để ghim vị trí · <kbd>?</kbd> phím tắt</div>
+    <div class="hint">Kéo trên thanh thời gian để chọn đoạn, kéo hai mép vàng để nới/thu (hoặc <kbd>I</kbd> / <kbd>O</kbd>) · bấm một ô đoạn cắt để góp ý cả đoạn · bấm lên video để ghim vị trí · <kbd>?</kbd> phím tắt</div>
   </section>
 
   <aside>
     <form class="compose" id="compose">
-      <div class="at"><span>Góp ý</span><span class="chip tc" id="atTc">—</span><span class="tc" id="atEnd"></span><button type="button" class="x" id="clearRange" title="Bỏ điểm ra" hidden>×</button><span id="atPin"></span></div>
+      <div class="at"><span>Góp ý</span><input class="tcin tc" id="inTc" placeholder="vào" aria-label="Điểm vào (phút:giây hoặc phút:giây:khung)">→<input class="tcin tc" id="outTc" placeholder="ra" aria-label="Điểm ra"><span class="chip" id="atSeg" hidden></span><button type="button" class="x" id="clearRange" title="Bỏ điểm ra" hidden>×</button><span id="atPin"></span></div>
       <div class="tools" id="tools">
         <button type="button" class="btn" data-tool="pen" aria-pressed="false" title="Vẽ tự do (P)">✎</button>
         <button type="button" class="btn" data-tool="arrow" aria-pressed="false" title="Mũi tên (A)">↗</button>
@@ -159,7 +165,7 @@ dialog td { padding: 3px 8px; border-bottom: 1px solid var(--line); font-size: 1
         <span class="tools" id="swatches"></span>
         <button type="button" class="btn" id="undoInk" title="Hoàn tác nét vẽ (⌘Z)">↶</button>
       </div>
-      <textarea id="text" placeholder="Cần sửa gì? Ví dụ: cắt bỏ đoạn ậm ừ này / phụ đề ngắt sai, gộp 2 dòng" aria-label="Nội dung góp ý"></textarea>
+      <textarea id="text" placeholder="Cần sửa gì? Gõ được cả khoảng ở đầu, ví dụ: 1:00-1:10: cắt bỏ đoạn này" aria-label="Nội dung góp ý"></textarea>
       <div class="row"><span class="hint">Enter gửi · Shift+Enter xuống dòng · Esc huỷ</span><button class="primary" id="send" disabled>Ghim góp ý</button></div>
     </form>
     <div class="panelbar" id="filters">
@@ -196,12 +202,23 @@ const FPS = 25;
 const COLORS = ["#ffd200", "#ff5a4f", "#4fd1ff", "#5fc48a", "#ffffff"];
 const $ = id => document.getElementById(id);
 const video = $("video");
-const S = { clips: [], path: null, items: [], draft: null, sel: null, filter: "open", tool: null, color: COLORS[0], tcMode: 0 };
+const S = { clips: [], path: null, items: [], draft: null, sel: null, filter: "open", tool: null, color: COLORS[0], tcMode: 0, segs: [] };
 
 // ---------- thời gian ----------
 const frameOf = t => Math.floor(t * FPS + 1e-6);
 const tcF = f => { const s = Math.floor(f / FPS); return [Math.floor(s / 60), s % 60, f % FPS].map(n => String(n).padStart(2, "0")).join(":"); };
 const tcOf = t => tcF(frameOf(t));
+// "75" / "1:15" / "1:15.5" giây · "1:15:12" = phút:giây:khung (giống cách trang hiện) → khung; sai → null
+const parseTc = s => {
+  const p = String(s).trim().split(":");
+  if (!p[0] || p.length > 3 || p.some(x => !/^\d+(\.\d+)?$/.test(x))) return null;
+  const [m, sec, f] = p.length === 1 ? [0, +p[0], 0] : [+p[0], +p[1], +(p[2] ?? 0)];
+  return Math.round((m * 60 + sec) * FPS + f);
+};
+// "từ 1:00 đến 1:10: nội dung" / "1:00-1:10 nội dung" ở đầu ô viết → [vào, ra, phần lời còn lại]
+const RANGE_RE = /^\s*(?:từ\s*)?([\d:.]+)\s*(?:-|–|→|đến|tới)\s*([\d:.]+?)\s*[:,]?\s+([\s\S]*)$/i;
+const rangePrefix = text => { const m = RANGE_RE.exec(text), a = m && parseTc(m[1]), b = m && parseTc(m[2]); return m && a != null && b > a ? [a, b, m[3]] : null; };
+const segAt = f => S.segs.findIndex(g => f >= g.start * FPS && f < g.end * FPS);
 const showT = t => [tcOf(t), "khung " + frameOf(t), t.toFixed(2) + " s"][S.tcMode];
 const dur = () => (isFinite(video.duration) && video.duration) || 0;
 const seek = t => { video.currentTime = Math.max(0, Math.min(t, dur() - 1 / FPS)); };
@@ -247,6 +264,7 @@ function openClip() {
   const src = "/video" + q();
   if (video.getAttribute("src") !== src) { video.src = src; thumbV.src = src; S.items = []; S.sel = S.draft = null; }
   loadItems(); renderAll();
+  api("GET", "/api/segments" + q()).then(r => { S.segs = r.segments || []; renderSegs(); }).catch(() => { S.segs = []; renderSegs(); });
 }
 setInterval(loadItems, 4000); // nhận thay đổi khi Claude đánh dấu đã sửa
 addEventListener("focus", loadItems);
@@ -303,7 +321,20 @@ function renderTime() {
   const r = $("draftRange"), D = S.draft;
   r.hidden = !(D && D.fe != null && d);
   if (!r.hidden) { r.style.left = D.f / FPS / d * 100 + "%"; r.style.width = (D.fe - D.f) / FPS / d * 100 + "%"; }
-  renderOverlay();
+  renderSegs(); renderOverlay();
+}
+function renderSegs() {
+  const box = $("segs"), d = dur(), f = frameOf(video.currentTime || 0), k = segAt(f);
+  box.hidden = !S.segs.length || !d;
+  if (box.hidden) return;
+  if (box.childElementCount !== S.segs.length) box.replaceChildren(...S.segs.map((g, i) => {
+    const b = document.createElement("button"); b.type = "button"; b.className = "sg" + (g.kind === "q" ? " q" : "");
+    b.style.left = g.start / d * 100 + "%"; b.style.width = (g.end - g.start) / d * 100 + "%";
+    b.textContent = i + 1; b.title = `Đoạn ${i + 1} · ${tcOf(g.start)} → ${tcOf(g.end)}\n${g.name}`;
+    b.onclick = () => { if (!ensureDraft()) return; S.draft.f = frameOf(g.start); S.draft.fe = Math.max(S.draft.f + 1, frameOf(g.end) - 1); seekFrame(S.draft.f); renderCompose(); renderTime(); $("text").focus(); };
+    return b;
+  }));
+  [...box.children].forEach((b, i) => b.classList.toggle("on", i === k));
 }
 function renderMarks() {
   const d = dur(), box = $("marks"), n = nums(); box.replaceChildren();
@@ -324,8 +355,10 @@ function renderMarks() {
 function renderCompose() {
   const D = S.draft;
   $("compose").hidden = !S.path;
-  $("atTc").textContent = D ? tcF(D.f) : "bấm video hoặc kéo thanh thời gian";
-  $("atEnd").textContent = D?.fe != null ? "→ " + tcF(D.fe) : D ? "(nhấn O hoặc kéo để chọn đoạn)" : "";
+  for (const [id, v] of [["inTc", D ? tcF(D.f) : ""], ["outTc", D?.fe != null ? tcF(D.fe) : ""]]) if (document.activeElement !== $(id)) $(id).value = v;
+  $("outTc").placeholder = D ? "ra (O)" : "ra";
+  const k = D ? segAt(D.f) : -1;
+  $("atSeg").hidden = k < 0; $("atSeg").textContent = k < 0 ? "" : "Đoạn " + (k + 1);
   $("clearRange").hidden = D?.fe == null;
   $("atPin").textContent = [D?.x != null && "· có ghim", D?.draw.length && `· ${D.draw.length} nét vẽ`].filter(Boolean).join(" ");
   $("send").disabled = !D || !($("text").value.trim() || D.draw.length);
@@ -343,7 +376,9 @@ const setTool = t => { S.tool = S.tool === t ? null : t; if (S.tool) ensureDraft
 function cancelDraft() { S.draft = null; S.tool = null; $("text").value = ""; renderCompose(); renderTime(); }
 
 async function send() {
-  const D = S.draft, text = $("text").value.trim();
+  const pre = rangePrefix($("text").value);
+  if (pre && ensureDraft()) [S.draft.f, S.draft.fe] = pre;
+  const D = S.draft, text = (pre ? pre[2] : $("text").value).trim();
   if (!D || !(text || D.draw.length)) return;
   cancelDraft(); // dọn ngay để góp ý kế tiếp không dính vào góp ý đang gửi
   try {
@@ -439,6 +474,7 @@ video.addEventListener("error", () => toast("Không phát được clip này."))
   if (shuttle) { const t = video.currentTime - (now - last) / 1000 * shuttle; last = now; if (t <= 0) { shuttle = 0; seek(0); } else video.currentTime = t; }
   const sel = S.items.find(c => c.id === S.sel);
   if (!video.paused && sel?.frameEnd != null && frameOf(video.currentTime) > sel.frameEnd) seekFrame(sel.frame); // chọn góp ý theo đoạn = phát lặp trong đoạn
+  else if (!video.paused && S.draft?.fe != null && frameOf(video.currentTime) > S.draft.fe) seekFrame(S.draft.f); // đang viết cho một khoảng = phát lặp khoảng đó
   if (!video.paused || shuttle) renderTime();
   requestAnimationFrame(tick);
 })(performance.now());
@@ -474,12 +510,33 @@ thumbV.addEventListener("seeked", () => {
   const cv = $("thumb"); cv.getContext("2d").drawImage(thumbV, 0, 0, cv.width, cv.height);
   if (want != null && Math.abs(want - thumbV.currentTime) > .2) thumbV.currentTime = want; else busy = false;
 });
-track.addEventListener("pointerdown", e => { if (!dur()) return; drag = { t0: trackT(e) }; track.setPointerCapture(e.pointerId); pause(); seek(drag.t0); });
-track.addEventListener("pointermove", e => { hover(e); if (drag) { seek(trackT(e)); drag.moved ||= Math.abs(trackT(e) - drag.t0) > 2 / FPS; } });
+// mép khoảng đang chọn nằm trong 8 px quanh con trỏ → "f" / "fe", không thì null
+const edgeAt = e => {
+  const D = S.draft, r = track.getBoundingClientRect(), d = dur();
+  if (D?.fe == null || !d) return null;
+  const x = e.clientX - r.left, px = f => f / FPS / d * r.width;
+  return Math.abs(x - px(D.fe)) < 8 ? "fe" : Math.abs(x - px(D.f)) < 8 ? "f" : null;
+};
+track.addEventListener("pointerdown", e => {
+  if (!dur()) return;
+  drag = { t0: trackT(e), edge: edgeAt(e) }; track.setPointerCapture(e.pointerId); pause(); seek(drag.t0);
+});
+track.addEventListener("pointermove", e => {
+  hover(e);
+  if (!drag) { track.style.cursor = edgeAt(e) ? "ew-resize" : ""; return; }
+  seek(trackT(e));
+  if (drag.edge) {   // kéo mép: nới / thu khoảng, giữ vào < ra
+    const D = S.draft; D[drag.edge] = frameOf(trackT(e));
+    if (D.fe <= D.f) { [D.f, D.fe] = [D.fe, D.f]; drag.edge = drag.edge === "f" ? "fe" : "f"; }
+    D.fe = Math.max(D.fe, D.f + 1); renderCompose(); renderTime(); return;
+  }
+  drag.moved ||= Math.abs(trackT(e) - drag.t0) > 2 / FPS;
+});
 track.addEventListener("pointerleave", () => { if (!drag) $("scrub").hidden = true; });
 track.addEventListener("pointerup", e => {
   if (!drag) return;
-  const t1 = trackT(e), { t0, moved } = drag; drag = null; $("scrub").hidden = true;
+  const t1 = trackT(e), { t0, moved, edge } = drag; drag = null; $("scrub").hidden = true;
+  if (edge) { seekFrame(S.draft[edge]); $("text").focus(); return; }
   if (!moved) { if (S.draft) { S.draft.f = frameOf(t1); if (S.draft.fe != null && S.draft.fe <= S.draft.f) S.draft.fe = null; renderCompose(); renderTime(); } return; }
   if (!ensureDraft()) return;
   S.draft.f = frameOf(Math.min(t0, t1)); S.draft.fe = frameOf(Math.max(t0, t1));
@@ -509,7 +566,15 @@ document.addEventListener("keydown", e => {
 });
 $("helpBtn").onclick = () => $("help").showModal();
 $("text").addEventListener("focus", () => { if (ensureDraft()) renderAll(); });
-$("text").addEventListener("input", renderCompose);
+$("text").addEventListener("input", () => { const p = rangePrefix($("text").value); if (p && S.draft) [S.draft.f, S.draft.fe] = p; renderCompose(); renderTime(); });
+for (const id of ["inTc", "outTc"]) $(id).addEventListener("change", () => {
+  if (!ensureDraft()) return;
+  const v = $(id).value.trim(), f = v ? parseTc(v) : null, D = S.draft;
+  if (v && f == null) toast("Không hiểu mốc “" + v + "” — gõ phút:giây (1:05) hoặc phút:giây:khung (1:05:12)");
+  else if (id === "inTc" && f != null) { D.f = Math.min(f, frameOf(dur())); if (D.fe != null && D.fe <= D.f) D.fe = null; seekFrame(D.f); }
+  else if (id === "outTc") { if (f == null) D.fe = null; else if (f > D.f) D.fe = Math.min(f, frameOf(dur())); else toast("Điểm ra phải sau điểm vào " + tcF(D.f)); }
+  renderCompose(); renderTime();
+});
 $("text").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } });
 $("compose").addEventListener("submit", e => { e.preventDefault(); send(); });
 $("clip").onchange = () => { S.path = $("clip").value; openClip(); };

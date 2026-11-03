@@ -1,5 +1,5 @@
 //! AYP: review loop with the local frame.io-like page (`tools/ayp-review`, port 8765).
-//! `review.open` exports the active sequence to the render drive and opens the page on that clip;
+//! `review.open` exports the active sequence to `<work folder>/Render` and opens the page on that clip;
 //! `review.import` turns the clip's `<clip>.mp4.feedback.json` notes into sequence markers.
 
 use std::net::{SocketAddr, TcpStream};
@@ -13,7 +13,9 @@ use serde_json::{Value, json};
 use crate::commands::{CommandSpec, bad, has_seq, str_p};
 use crate::{EngineError, Result, Session};
 
-const ROOT: &str = "/Volumes/Extreme SSD/Render";
+/// `<data dir>/ayp-workdir.txt`: the AYP work folder the user chose when installing
+/// (`scripts/install-ayp.sh`), one path; review clips go to its `Render/` folder.
+const WORKDIR_FILE: &str = "ayp-workdir.txt";
 const PORT: u16 = 8765;
 const SCRIPT: &str = include_str!("../../../tools/ayp-review/review.py");
 const PAGE: &str = include_str!("../../../tools/ayp-review/duyet-clip.html");
@@ -27,7 +29,7 @@ pub fn commands() -> Vec<CommandSpec> {
             label: "Duyệt góp ý (AYP)…",
             menu: &["Sequence"],
             shortcut: None,
-            params: r#"{} (exports the active sequence to /Volumes/Extreme SSD/Render/<project>/<sequence>.mp4, then opens http://127.0.0.1:8765 on it)"#,
+            params: r#"{} (exports the active sequence to <AYP work folder>/Render/<project>/<sequence>.mp4, then opens http://127.0.0.1:8765 on it)"#,
             enabled: has_seq,
             run: open,
             journal: false,
@@ -52,12 +54,27 @@ fn safe(n: &str) -> String {
     if s.is_empty() { "Export".into() } else { s }
 }
 
+/// The work folder named in `data/ayp-workdir.txt` (`~/` expanded).
+fn workdir_in(data: &Path) -> Result<PathBuf> {
+    let file = data.join(WORKDIR_FILE);
+    let dir = std::fs::read_to_string(&file).ok().map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
+    let dir =
+        dir.ok_or_else(|| bad("review", format!("chưa chọn thư mục làm việc AYP — chạy scripts/install-ayp.sh hoặc ghi đường dẫn vào {}", file.display())))?;
+    Ok(PathBuf::from(crate::export_tools::expand_home(&dir)))
+}
+
+/// `<work folder>/Render`, where review clips are exported.
+fn render_dir() -> Result<PathBuf> {
+    let data = crate::autosave::default_data_dir().ok_or_else(|| bad("review", "no data directory"))?;
+    Ok(workdir_in(&data)?.join("Render"))
+}
+
 fn clip_path(s: &Session) -> Result<PathBuf> {
     let seq = s.state.active_sequence.ok_or(EngineError::NoSequence)?;
     let name = s.project.item(seq).map(|i| i.name.as_str()).unwrap_or("Sequence");
     // a sequence made from a clip is named after the file ("x.mp4"): no "x.mp4.mp4"
     let name = [".mp4", ".mov", ".MP4", ".MOV"].iter().find_map(|e| name.strip_suffix(e)).unwrap_or(name);
-    Ok(Path::new(ROOT).join(safe(&s.project.name)).join(format!("{}.mp4", safe(name))))
+    Ok(render_dir()?.join(safe(&s.project.name)).join(format!("{}.mp4", safe(name))))
 }
 
 /// `?clip=` value: everything but unreserved characters and `/` percent-encoded.
@@ -66,7 +83,7 @@ fn encode(v: &str) -> String {
 }
 
 /// Starts review.py (written to `<data dir>/review`, refreshed every time) unless the port answers.
-fn ensure_server() -> Result<()> {
+fn ensure_server(root: &Path) -> Result<()> {
     let addr = SocketAddr::from(([127, 0, 0, 1], PORT));
     if TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok() {
         return Ok(());
@@ -77,7 +94,9 @@ fn ensure_server() -> Result<()> {
     std::fs::write(dir.join("review.py"), SCRIPT).map_err(io)?;
     std::fs::write(dir.join("duyet-clip.html"), PAGE).map_err(io)?;
     std::process::Command::new("/usr/bin/python3")
-        .args(["review.py", "--no-open", "--root", ROOT])
+        .arg("review.py")
+        .args(["--no-open", "--root"])
+        .arg(root)
         .current_dir(&dir)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
@@ -88,15 +107,15 @@ fn ensure_server() -> Result<()> {
 }
 
 fn open(s: &mut Session, _p: &Value) -> Result<Value> {
-    if !Path::new(ROOT).is_dir() {
-        return Err(bad("review.open", format!("không thấy {ROOT} (chưa cắm ổ Extreme SSD?)")));
+    let root = render_dir()?;
+    let work = root.parent().unwrap_or(&root);
+    if !work.is_dir() {
+        return Err(bad("review.open", format!("không thấy thư mục làm việc {} (ổ chưa cắm?)", work.display())));
     }
+    std::fs::create_dir_all(&root).map_err(|e| bad("review.open", format!("{}: {e}", root.display())))?;
     let path = clip_path(s)?.to_string_lossy().into_owned();
-    ensure_server()?;
-    let out = crate::export_tools::export_media(
-        s,
-        &json!({"path": path, "format": "h264", "bitrateKbps": 8000, "range": "entire", "burnCaptions": true}),
-    )?;
+    ensure_server(&root)?;
+    let out = crate::export_tools::export_media(s, &json!({"path": path, "format": "h264", "bitrateKbps": 8000, "range": "entire", "burnCaptions": true}))?;
     let url = format!("http://127.0.0.1:{PORT}/?clip={}", encode(&path));
     let job = out["job"].as_u64().and_then(|id| s.jobs.iter().find(|j| j.id == id)).map(|j| j.result.clone());
     if let Some(result) = job {
@@ -188,5 +207,16 @@ mod tests {
         assert!(done.comment.contains("Claude: ok"));
         assert!(marker_of(&json!({"text": "no frame"}), rate, MarkerId(3)).is_none());
         assert_eq!(encode("/Volumes/Extreme SSD/a – b.mp4"), "/Volumes/Extreme%20SSD/a%20%E2%80%93%20b.mp4");
+    }
+
+    /// The work folder comes from the file the installer writes; no file, no folder — never a default drive.
+    #[test]
+    fn work_folder_is_the_users_choice() {
+        let d = std::env::temp_dir().join(format!("fc-ayp-workdir-{}", std::process::id()));
+        std::fs::create_dir_all(&d).expect("temp dir");
+        assert!(workdir_in(&d).is_err());
+        std::fs::write(d.join(WORKDIR_FILE), "  /tmp/AYP Work\n").expect("write");
+        assert_eq!(workdir_in(&d).expect("work folder"), PathBuf::from("/tmp/AYP Work"));
+        let _ = std::fs::remove_dir_all(&d);
     }
 }

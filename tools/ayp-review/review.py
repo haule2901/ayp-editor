@@ -14,7 +14,16 @@ from urllib.parse import urlparse, parse_qs
 PAGE = Path(__file__).resolve().parent / "duyet-clip.html"
 FPS = 25
 LOCK = threading.Lock()
-ROOT = Path("/Volumes/Extreme SSD/Render")
+# Thư mục làm việc AYP người dùng chọn lúc cài (scripts/install-ayp.sh), clip duyệt nằm trong Render/
+WORKDIR_FILE = Path.home() / "Library/Application Support/FilmCraft/ayp-workdir.txt"
+
+
+def default_root():
+    w = WORKDIR_FILE.read_text("utf-8").strip() if WORKDIR_FILE.exists() else ""
+    return Path(w).expanduser() / "Render" if w else None
+
+
+ROOT = default_root()
 
 
 def fb_path(clip: Path) -> Path:
@@ -31,6 +40,12 @@ def save(clip: Path, data: dict) -> None:
     tmp = p.with_name(p.name + ".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), "utf-8")
     os.replace(tmp, p)  # ghi nguyên tử, không để file nửa vời
+
+
+def segments(clip: Path) -> list:
+    """<clip>.segments.json cạnh clip (do script dựng ghi): [{"name", "start", "end" (giây trong clip), "kind": "q"?}] → [] nếu không có."""
+    p = clip.with_name(clip.name + ".segments.json")
+    return json.loads(p.read_text()) if p.exists() else []
 
 
 def tc(frame: int) -> str:
@@ -110,6 +125,8 @@ class H(BaseHTTPRequestHandler):
             self.run(lambda q: self.send_json({"root": str(ROOT), "clips": clips(ROOT)}))
         elif route == "/api/feedback":
             self.run(lambda q: self.send_json(load(self.clip(q))))
+        elif route == "/api/segments":
+            self.run(lambda q: self.send_json({"segments": segments(self.clip(q))}))
         elif route == "/video":
             self.run(self.video)
         else:
@@ -180,7 +197,7 @@ class H(BaseHTTPRequestHandler):
 def main():
     global ROOT
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--root", default=str(ROOT))
+    ap.add_argument("--root", default=str(ROOT) if ROOT else None)
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--no-open", action="store_true")
     sub = ap.add_subparsers(dest="cmd")
@@ -193,6 +210,11 @@ def main():
         items = sorted(load(clip)["items"], key=lambda i: i["frame"])
         if not a.all:
             items = [i for i in items if i["status"] != "done"]
+        segs = segments(clip)
+        for i in items:   # góp ý rơi vào đoạn cắt nào (số đoạn đếm từ 1, như trên trang)
+            k = next((n for n, g in enumerate(segs, 1) if g["start"] * FPS <= i["frame"] < g["end"] * FPS), None)
+            if k:
+                i["segment"] = f"{k}. {segs[k - 1]['name']}"
         print(json.dumps({"clip": str(clip), "fps": FPS, "items": items}, ensure_ascii=False, indent=2))
     elif a.cmd == "done":
         clip = Path(a.clip).resolve()
@@ -204,6 +226,8 @@ def main():
         save(clip, data)
         print(f"Đã đánh dấu {a.id} [{item['tc']}] là đã sửa")
     else:
+        if not a.root:
+            sys.exit(f"Chưa chọn thư mục làm việc AYP: chạy scripts/install-ayp.sh, ghi đường dẫn vào {WORKDIR_FILE}, hoặc truyền --root")
         ROOT = Path(a.root)
         srv = ThreadingHTTPServer(("127.0.0.1", a.port), H)
         url = f"http://127.0.0.1:{a.port}/"
