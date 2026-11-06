@@ -133,18 +133,25 @@ fn run_item(app: &mut FilmcraftApp, ctx: &egui::Context, item: &Item) {
             } else {
                 item.params
             };
-            for (i, (cmd, params)) in std::iter::once((item.cmd, params)).chain(item.then.iter().copied()).enumerate() {
-                match run(app, ctx, cmd, params) {
-                    Err(e) => {
-                        app.ui.status = format!("Chưa làm được: {}", vi::reason(&e));
-                        return;
-                    }
-                    // Xoá khoảng lặng / từ đệm that found nothing would otherwise look like a dead button.
-                    Ok(v) if i == 0 && v.get("removed").and_then(serde_json::Value::as_u64) == Some(0) => {
-                        app.ui.status = "Không tìm thấy chỗ nào để xoá".into();
-                    }
-                    Ok(_) => {}
+            // one click, one undo step: a failed `then` takes the whole click back
+            let first = super::one_step(app, item.label, |app| {
+                let mut first = None;
+                for (cmd, params) in std::iter::once((item.cmd, params)).chain(item.then.iter().copied()) {
+                    let v = run(app, ctx, cmd, params)?;
+                    first.get_or_insert(v);
                 }
+                Ok(first)
+            });
+            match first {
+                Err(e) => {
+                    app.ui.status = format!("Chưa làm được: {}", vi::reason(&e));
+                    return;
+                }
+                // Xoá khoảng lặng / từ đệm that found nothing would otherwise look like a dead button.
+                Ok(Some(v)) if v.get("removed").and_then(serde_json::Value::as_u64) == Some(0) => {
+                    app.ui.status = "Không tìm thấy chỗ nào để xoá".into();
+                }
+                Ok(_) => {}
             }
             if params != item.params {
                 app.ui.transcript_sel = None;

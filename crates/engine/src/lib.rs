@@ -199,6 +199,15 @@ impl Services for FsServices {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct UndoMark(Option<usize>);
 
+/// Where the project and history stood when a group of edits began ([`Session::group_begin`]).
+pub struct GroupMark {
+    project: Arc<Project>,
+    state: EditorState,
+    undo: usize,
+    redo: Vec<(String, Arc<Project>)>,
+    limit: usize,
+}
+
 /// Undo history of whole-project snapshots.
 #[derive(Clone, Default)]
 pub struct History {
@@ -875,41 +884,49 @@ impl Session {
     /// Run several undoable edits as one undo step labelled `label`. If `f` fails, every edit it made
     /// is rolled back and the history is as before.
     pub fn edit_group<R>(&mut self, label: &str, f: impl FnOnce(&mut Session) -> Result<R>) -> Result<R> {
-        let (project, state, undo, redo, limit) =
-            (self.project.clone(), self.state.clone(), self.history.undo.len(), self.history.redo.clone(), self.history.limit);
-        // keep every step the group makes, however many, so the first one can be found afterwards
-        self.history.limit = usize::MAX;
+        let mark = self.group_begin();
         // a panic inside the group must not leave the history unlimited: restore, then let it go on
         let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(self)));
-        self.history.limit = limit;
-        let first = self.history.undo.get(undo).map(|e| e.1.clone());
-        let rolled_back = |s: &mut Session| {
-            s.history.undo.truncate(undo);
-            s.history.redo = redo.clone();
-            s.history.merge_key = None;
-            s.project = project.clone();
-            s.state = state.clone();
-            s.bump();
+        self.group_end(mark, label, matches!(r, Ok(Ok(_))));
+        r.unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+    }
+
+    /// Start a group of edits made by code that can't run inside [`Session::edit_group`] (a UI click
+    /// that runs several commands). Every [`Session::group_begin`] needs its [`Session::group_end`].
+    pub fn group_begin(&mut self) -> GroupMark {
+        let mark = GroupMark {
+            project: self.project.clone(),
+            state: self.state.clone(),
+            undo: self.history.undo.len(),
+            redo: self.history.redo.clone(),
+            limit: self.history.limit,
         };
-        match (r, first) {
-            (Ok(Ok(v)), Some(first)) => {
-                self.history.undo.truncate(undo);
-                self.history.undo.push((label.to_string(), first));
-                if self.history.undo.len() > limit {
-                    self.history.undo.remove(0);
-                }
-                self.history.merge_key = None;
-                Ok(v)
+        // keep every step the group makes, however many, so the first one can be found afterwards
+        self.history.limit = usize::MAX;
+        mark
+    }
+
+    /// End a group: `ok`, its edits become one undo step labelled `label`; not `ok`, every edit it
+    /// made is rolled back and the history is as before.
+    pub fn group_end(&mut self, mark: GroupMark, label: &str, ok: bool) {
+        let GroupMark { project, state, undo, redo, limit } = mark;
+        self.history.limit = limit;
+        if !ok {
+            self.history.undo.truncate(undo);
+            self.history.redo = redo;
+            self.history.merge_key = None;
+            self.project = project;
+            self.state = state;
+            self.bump();
+            return;
+        }
+        if let Some(first) = self.history.undo.get(undo).map(|e| e.1.clone()) {
+            self.history.undo.truncate(undo);
+            self.history.undo.push((label.to_string(), first));
+            if self.history.undo.len() > limit {
+                self.history.undo.remove(0);
             }
-            (Ok(Ok(v)), None) => Ok(v),
-            (Ok(Err(e)), _) => {
-                rolled_back(self);
-                Err(e)
-            }
-            (Err(panic), _) => {
-                rolled_back(self);
-                std::panic::resume_unwind(panic)
-            }
+            self.history.merge_key = None;
         }
     }
 

@@ -261,6 +261,32 @@ fn auto_match_tags_an_untagged_clip_as_dialogue() {
     assert!(es.to_string().contains("ialogue"), "{es}");
 }
 
+/// One click is one undo step however many commands it runs: undoing "Thêm chữ" leaves no text clip.
+#[test]
+fn one_click_is_one_undo_step() {
+    let mut d = Driver::launch(true);
+    let clips = |d: &mut Driver| {
+        let q = d.exec("sequence.inspect", json!({}))["result"].clone();
+        q["video"].as_array().unwrap().iter().map(|t| t["items"].as_array().unwrap().len()).sum::<usize>()
+    };
+    let n = clips(&mut d);
+    d.click("ayp.tab.text");
+    let before = d.undo_len();
+    d.click("ayp.item.graphics.newText");
+    assert_eq!(clips(&mut d), n + 1, "{}", d.h.state().ui.status);
+    assert_eq!(d.undo_len(), before + 1);
+    d.exec("edit.undo", json!({}));
+    assert_eq!(clips(&mut d), n, "undo leaves no text clip");
+    // Chuẩn hoá âm lượng on an untagged clip: tag as speech + match, one step
+    let v = d.exec("sequence.inspect", json!({}));
+    let a = v["result"]["audio"][0]["items"][0]["clip"].clone();
+    d.exec("timeline.select", json!({"clips": [a]}));
+    d.click("ayp.tab.audio");
+    let before = d.undo_len();
+    d.click("ayp.item.essentialSound.autoMatch");
+    assert_eq!(d.undo_len(), before + 1, "{}", d.h.state().ui.status);
+}
+
 /// After a failed click, the next click that works does not keep showing the old reason.
 #[test]
 fn a_working_click_clears_the_previous_reason() {

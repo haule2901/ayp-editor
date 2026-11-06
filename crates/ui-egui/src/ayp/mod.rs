@@ -15,3 +15,38 @@ pub(crate) fn open_tab(app: &mut crate::FilmcraftApp, tab: &str) -> Result<(), S
     app.ui.ayp_tab = tab.to_string();
     Ok(())
 }
+
+/// Run `f` (a click that invokes several commands) as one undo step labelled `label`; when it fails,
+/// every edit it made is taken back. `menus::invoke` needs the whole app, so it can't run inside
+/// `Session::edit_group`: the group is marked around it instead.
+pub(crate) fn one_step<R>(app: &mut crate::FilmcraftApp, label: &str, f: impl FnOnce(&mut crate::FilmcraftApp) -> Result<R, String>) -> Result<R, String> {
+    let mark = app.session.group_begin();
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(app)));
+    app.session.group_end(mark, label, matches!(r, Ok(Ok(_))));
+    r.unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_failed_step_takes_the_whole_click_back() {
+        let (mut app, ctx) = super::library::tests::demo();
+        let (undo, project) = (app.session.history.undo.len(), app.session.project.clone());
+        let r = super::one_step(&mut app, "Thử", |app| {
+            crate::menus::invoke(app, &ctx, "sequence.addTracks", serde_json::json!({"video": 1, "audio": 0}))?;
+            Err::<(), _>("then failed".to_string())
+        });
+        assert!(r.is_err());
+        assert_eq!(app.session.history.undo.len(), undo);
+        assert!(std::sync::Arc::ptr_eq(&app.session.project, &project), "the added track is taken back");
+        let r = super::one_step(&mut app, "Thử", |app| {
+            for _ in 0..2 {
+                crate::menus::invoke(app, &ctx, "sequence.addTracks", serde_json::json!({"video": 1, "audio": 0}))?;
+            }
+            Ok(())
+        });
+        assert!(r.is_ok());
+        assert_eq!(app.session.history.undo.len(), undo + 1);
+        assert_eq!(app.session.history.undo.last().unwrap().0, "Thử");
+    }
+}
