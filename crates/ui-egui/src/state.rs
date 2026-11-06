@@ -242,6 +242,14 @@ impl Default for TimelineView {
     }
 }
 
+/// The AYP right panel's tabs.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AypSideTab {
+    #[default]
+    Props,
+    Ai,
+}
+
 /// Video thumbnails on timeline clips (Timeline wrench menu ▸ Show Video Thumbnails).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ThumbnailMode {
@@ -464,6 +472,9 @@ pub struct UiState {
     /// Open tab of the AYP left panel (id from `ayp::tabs::TABS`).
     #[serde(default = "default_ayp_tab")]
     pub ayp_tab: String,
+    /// Open tab of the AYP right panel.
+    #[serde(default)]
+    pub ayp_side: AypSideTab,
     /// The header bar (Home, Import, Edit, Export, workspaces). An app that embeds FilmCraft can hide it.
     #[serde(default = "shown")]
     pub show_header: bool,
@@ -993,6 +1004,7 @@ impl Default for UiState {
             show_header: true,
             show_status_bar: true,
             ayp_tab: default_ayp_tab(),
+            ayp_side: AypSideTab::default(),
             dark: true,
             show_scopes: false,
             status: String::new(),
