@@ -77,3 +77,14 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     }
     button(app, ui, &ctx, Rect::from_min_size(egui::pos2(ex_left, y), vec2(ex_w, H)), &EXPORT, false, true, true);
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn every_button_has_json_object_params() {
+        for b in super::BUTTONS.iter().chain([&super::EXPORT]) {
+            let v: serde_json::Value = serde_json::from_str(b.2).unwrap_or_else(|e| panic!("{}: {e}", b.1));
+            assert!(v.is_object(), "{}", b.1);
+        }
+    }
+}

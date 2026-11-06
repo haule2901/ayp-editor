@@ -85,12 +85,12 @@ fn props_tab_shows_the_selected_clip() {
     let mut d = Driver::launch(true);
     d.select_first_clip();
     assert!(!d.has("ayp.hint.selectClip"));
-    let n = d.h.state().auto.query("").len();
-    let mut d2 = Driver::launch(true);
-    d2.exec("edit.deselectAll", json!({}));
-    d2.frames(2);
     assert!(d.has("ayp.side.props") && d.has("ayp.side.ai"));
-    assert!(n > d2.h.state().auto.query("").len() + 1, "properties controls should appear: {} vs {}", n, d2.h.state().auto.query("").len());
+    // the classic Properties panel's own controls: the clip's Motion ▸ Position keyframe button
+    assert!(d.has("properties.motion.position.addKeyframe"));
+    d.exec("edit.deselectAll", json!({}));
+    d.frames(2);
+    assert!(!d.has("properties.motion.position.addKeyframe"));
     assert!(d.h.state().ui_error.is_none(), "{:?}", d.h.state().ui_error);
 }
 
@@ -101,8 +101,11 @@ fn switching_to_ai() {
     d.click("ayp.side.ai");
     assert_eq!(d.h.state().ui.ayp_side, AypSideTab::Ai);
     assert!(d.has("ayp.side.openPalette"));
-    d.click("ayp.side.openPalette"); // palette arrives in Task 8: the error is swallowed
-    assert!(d.h.state().ui.status.is_empty(), "{}", d.h.state().ui.status);
+    d.click("ayp.side.openPalette");
+    assert!(d.has("ayp.palette"), "Tìm lệnh… opened: {}", d.h.state().ui.status);
+    assert_eq!(d.h.state().ui.ayp_palette.as_deref(), Some(""));
+    d.call("ui.key", json!({"key": "Escape"}));
+    d.frames(2);
     d.click("ayp.side.props");
     assert_eq!(d.h.state().ui.ayp_side, AypSideTab::Props);
 }
