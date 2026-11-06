@@ -249,6 +249,19 @@ fn auto_match_tags_an_untagged_clip_as_dialogue() {
     assert!(es.to_string().contains("ialogue"), "{es}");
 }
 
+/// After a failed click, the next click that works does not keep showing the old reason.
+#[test]
+fn a_working_click_clears_the_previous_reason() {
+    let mut d = Driver::launch(true);
+    d.exec("edit.deselectAll", json!({}));
+    d.click("ayp.tab.effects");
+    d.click("ayp.item.effects.apply.gaussian_blur");
+    assert!(d.h.state().ui.status.starts_with("Chưa làm được"), "{}", d.h.state().ui.status);
+    d.select_first_clip();
+    d.click("ayp.item.effects.apply.gaussian_blur");
+    assert_eq!(d.h.state().ui.status, "");
+}
+
 #[test]
 fn no_open_sequence_shows_a_hint() {
     let d = Driver::launch(false);

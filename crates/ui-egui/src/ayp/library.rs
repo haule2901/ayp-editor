@@ -32,6 +32,8 @@ pub(crate) fn click_item(app: &mut FilmcraftApp, ctx: &egui::Context, item: &Ite
         Kind::Panel => app.ui.status = "Chọn trong bảng bên dưới".into(),
         Kind::Ai => {}
         Kind::Run => {
+            // A reason left by an earlier failed click must not stand next to this click's result.
+            app.ui.status.clear();
             // Lift / Extract act on the words picked in the embedded Text panel, as its own buttons do.
             let picked;
             let params = if matches!(item.cmd, "transcript.lift" | "transcript.extract") {

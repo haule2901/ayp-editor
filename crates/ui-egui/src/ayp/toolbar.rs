@@ -22,6 +22,7 @@ const H: f32 = 28.0;
 
 fn run(app: &mut FilmcraftApp, ctx: &egui::Context, cmd: &str, params: &str) {
     let p = serde_json::from_str(params).unwrap_or_default();
+    app.ui.status.clear();
     if let Err(e) = crate::menus::invoke(app, ctx, cmd, p) {
         app.ui.status = format!("Chưa làm được: {}", vi::reason(&e));
     }
