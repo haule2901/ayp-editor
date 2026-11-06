@@ -15,10 +15,21 @@ Paths:
   (a native file dialog would hang an unattended run).
 - "panel": the button points at the embedded classic panel; the command runs with params a person picks there.
 - "ai": the button is for the AI; the command runs with params the AI would send.
-Results: PASS, PASS(dialog|panel|ai), FAIL (with the error), SKIP, MANUAL. Stdlib only.
+- "cmd": no AYP button for it (Thông số, Tìm lệnh…); the command runs through engine.execute.
+- "no-op click": the click ran and said it found nothing on this clip; the row then shows the command cutting
+  with other params through engine.execute.
+Results: PASS, PASS(dialog|panel|ai|cmd|no-op click), FAIL (with the error), SKIP, MANUAL. Stdlib only.
 
 Safety: it refuses to run unless the app on --port is AYPEditor (answers ui.ayp.tabs, ui.ayp.state has a
 workspace) with no unsaved changes, because it starts a new project. FilmCraft AYP's 9879 is never the default.
+
+What a run leaves behind, and what it cleans up itself:
+- cleaned: the test project ends replaced by an empty "Untitled" one (quit with app.quit afterwards); its
+  entries in File ▸ Open Recent; queued exports; the test LUT; the review clip, its notes and its folder in
+  <AYP work folder>/Render; the review page server on 8765 when this run started it.
+- left: the files in --work (project, exports, narrations, extracted audio, the .cube; delete the folder);
+  the browser tab review.open opens on http://127.0.0.1:8765; a FilmCraft recovery snapshot when the app
+  is killed instead of quit. It never edits workspaces.json (it only reads the dock through ui.inspect).
 """
 import argparse
 import json
@@ -172,15 +183,21 @@ class Check:
         q = app.seq()
         self.v = q["video"][0]["items"][0]["clip"]
         self.au = q["audio"][0]["items"][0]["clip"]
-        r = app.ex("transcript.generate", {"items": [self.item], "model": a.model, "language": "vi"}, timeout=900)
-        if not r.get("ok") and "timeout" in str(r.get("error")):
-            # cut off at 60 s by the control server; the command kept running and has finished by now
-            r = {"ok": True, "result": app.res("transcript.inspect")["items"]}
-        if not r.get("ok"):
-            raise Fail(f"transcript.generate: {r.get('error')}")
-        self.words = app.res("transcript.inspect")["words"]
+        # Chép lời (tiếng Việt): the AYP button, which ignores Settings ▸ Media Analysis (whisper-base / en)
+        app.ex("timeline.select", {"clips": [self.v, self.au]})
+        t0 = time.time()
+        r = app.call("ui.ayp.open", {"tab": "cut"})
+        r = app.call("ui.click", {"id": "ayp.item.transcript.generate"}, timeout=900)
+        app.wait_idle()  # the click transcribes on the UI thread; a reply cut off at 60 s means it is still busy
+        tr = app.res("transcript.inspect")
+        self.words = tr["words"]
+        st = app.status()
         if not self.words:
-            raise Fail("transcript.generate produced no words")
+            raise Fail(f"Chép lời made no transcript: {st!r} {r}")
+        self.row("Chép lời (tiếng Việt) (transcript.generate)", "Cắt bằng chữ / Phụ đề", "click ayp.item.transcript.generate", "PASS",
+                 f"{len(self.words)} words, {tr['items'][0]['language']}, {tr['items'][0]['source']} in {time.time() - t0:.0f} s, although Settings ▸ "
+                 f"Media Analysis says {app.res('prefs.get', {'key': 'mediaAnalysis.whisperModel'})} / {app.res('prefs.get', {'key': 'mediaAnalysis.defaultLanguage'})}")
+        r = {"result": tr["items"]}
         app.res("file.save")
         app.call("ui.ayp.open", {"tab": "media", "side": "props"})
         self.base = app.hist()
@@ -340,10 +357,11 @@ class Check:
                 raise Fail(f"nothing imported: {r}")
             return "PASS(dialog)", f"imported item {r['items'][0]}; the button itself opens the system file dialog"
         self.run("Nhập tệp (file.import)", "Phương tiện", "engine.execute file.import {paths}", imp)
+        q = app.seq()
+        free = next((t["name"] for t in q["audio"] if not t["items"] and not t["locked"]), "a new audio track")
         self.row("Ghi âm lời thoại — bắt đầu (audio.voiceover.start)", "Phương tiện", "not run (needs the microphone)", "MANUAL",
-                 "defaults with {}: track = record-armed audio track, else the first targeted one, else A1; starts at the playhead "
-                 "(or In→Out punch when both are marked); preroll from Settings ▸ Voice-over. The take is placed with overwrite, so on "
-                 "a clip whose own sound is on A1 it replaces that sound for the recorded span")
+                 f"the button records through the Timeline's record toggle (playback and countdown roll) on the first empty audio "
+                 f"track — here {free}, not A1 with the clip's own sound; preroll from Settings ▸ Voice-over")
         self.row("Ghi âm lời thoại — dừng (audio.voiceover.stop)", "Phương tiện", "not run", "MANUAL", "needs a recording in progress")
 
         def export_media():
@@ -420,7 +438,7 @@ class Check:
             k = next(e for e in it["effects"] if e["effect"] == "volume")["params"]["level"]["keyframes"]
             if k < 2:
                 raise Fail(f"volume keyframes {k}")
-            return "PASS(panel)", f"{k} volume keyframes (−40 dB → 0 dB over 2 s), set in Thông số"
+            return "PASS(cmd)", f"{k} volume keyframes (−40 dB → 0 dB over 2 s), set in Thông số"
         self.run("Rõ dần bằng keyframe volume", "Thông số", "engine.execute effects.setParam volume keyframe", vol_keys)
 
         # ---------------- Văn bản
@@ -490,7 +508,7 @@ class Check:
                     raise Fail(st or "nothing happened, no reason shown")
                 # the button ran and found nothing on this clip; show the command does cut when there is something
                 r = app.res(key, params)
-                return "PASS", (f"the click ran and said {st!r} (no pause ≥ 1 s / no ờ-ừm filler in these 60 s); "
+                return "PASS(no-op click)", (f"the click ran and said {st!r} (no pause ≥ 1 s / no ờ-ừm filler in these 60 s); "
                                 f"{key} {json.dumps(params, ensure_ascii=False)} → {json.dumps(r, ensure_ascii=False)}")
             self.run(f"{name} ({key})", "Cắt bằng chữ", f"click ayp.item.{key}", tx)
         for key, name in (("transcript.lift", "Xoá chữ chọn, để khoảng trống"), ("transcript.extract", "Xoá chữ chọn, kéo khít")):
@@ -593,18 +611,21 @@ class Check:
         self.run("Tạo mặt nạ (masks.add ellipse)", "Hiệu ứng", "click ayp.item.masks.add", mask)
 
         def track():
-            app.res("masks.add", {"clip": self.v, "shape": "ellipse"})
-            app.ex("playhead.set", {"seconds": 1})
+            # a tracker follows one shot: keep the clip inside the 10–40 s shot of the test clip, mask on the face
+            app.res("sequence.addEdit", {"time": 40 * TICKS})
+            first = app.seq()["video"][0]["items"][0]["clip"]
+            app.ex("timeline.select", {"clips": [first]})
+            app.res("masks.add", {"clip": first, "shape": "ellipse", "center": [540, 520], "size": [260, 320]})
+            app.ex("playhead.set", {"seconds": 10})
             since = self.job_ids()
             before = app.hist()
             st = self.click_item("effects", "masks.track")
-            js = self.wait_jobs(since, 300)
-            if st.startswith("Chưa làm được"):
-                raise Fail(st)
-            n = app.hist() - before
-            if n <= 0 and not js:
-                raise Fail(f"nothing tracked; status {st!r}")
-            return "PASS", f"+{n} step(s); jobs {[(j.get('name', j.get('label')), j.get('status')) for j in js]}"
+            js = self.wait_jobs(since, 900)
+            errs = [(j.get("result") or {}).get("error") for j in js if (j.get("result") or {}).get("error")]
+            if errs or not js:
+                raise Fail(f"tracking job: {errs or 'none started'}; status {st!r}")
+            j = js[-1]
+            return "PASS", f"+{app.hist() - before} step; {j.get('label')}: {j.get('done')} of {j.get('total')} frames, {j.get('status')}"
         self.run("Mặt nạ bám theo vật (masks.track)", "Hiệu ứng", "click ayp.item.masks.track", track)
 
         def nest():
@@ -649,7 +670,9 @@ class Check:
             look = app.ex("lumetri.setLook", {"clip": self.v, "lut": f"lib:{lid}"}) if lid else {"ok": False}
             if lid:
                 app.ex("lut.remove", {"id": lid})  # keep the user's LUT library as it was
-            return "PASS(panel)", f"imported {r}; applied as Look: {look.get('ok')}; removed from the library again"
+            if not look.get("ok"):
+                raise Fail(f"imported {r} but lumetri.setLook failed: {look.get('error')}")
+            return "PASS(panel)", f"imported {r}; applied as Look; removed from the library again"
         self.run("Nhập LUT (lut.import)", "Màu", "engine.execute lut.import {path}", lut)
 
         def match():
@@ -705,7 +728,7 @@ class Check:
             m = {e["effect"]: e["params"] for e in clip_of(app.seq(), self.v)["effects"]}
             vals = {k: m["motion"][k]["value"] for k in ("position", "scale", "rotation")}
             vals.update(opacity=m["opacity"]["opacity"]["value"], blend=m["opacity"]["blend"]["value"])
-            return "PASS", f"{len(inside)} controls in Thông số; +{app.hist() - before} steps; {vals}"
+            return "PASS(cmd)", f"{len(inside)} controls in Thông số; +{app.hist() - before} steps; {vals}"
         self.run("Vị trí/tỷ lệ/xoay/độ mờ/hoà trộn", "Thông số", "Thông số panel + engine.execute effects.setParam", props)
 
         def keyframes():
@@ -714,7 +737,7 @@ class Check:
             k = next(e for e in clip_of(app.seq(), self.v)["effects"] if e["effect"] == "motion")["params"]["scale"]["keyframes"]
             if k < 2:
                 raise Fail(f"{k} keyframes")
-            return "PASS", f"{k} scale keyframes ◆"
+            return "PASS(cmd)", f"{k} scale keyframes ◆"
         self.run("Keyframe ◆", "Thông số", "engine.execute effects.setParam keyframe", keyframes)
 
         # ---------------- Timeline toolbar
@@ -818,12 +841,12 @@ class Check:
             n = len(app.seq()["video"][0]["items"])
             if n < 2:
                 raise Fail(f"V1 has {n} clip(s) after paste")
-            return self.grew(before, "", f"V1 now {n} clips")
+            return "PASS(cmd)", self.grew(before, "", f"V1 now {n} clips")[1]
         self.run("Nhân đôi clip (edit.copy + edit.paste)", "Tìm lệnh…", "engine.execute edit.copy / edit.paste", dup)
 
         def quick():
             d, mb = self.export_check("export.quick", {"path": os.path.join(W, "x-quick.mp4"), "format": "h264", "bitrateKbps": 8000, "range": "inOut"}, 3)
-            return "PASS", f"In/Out 3 s at 8 Mbps → {d:.2f} s, {mb:.1f} MB (ffprobe)"
+            return "PASS(cmd)", f"In/Out 3 s at 8 Mbps → {d:.2f} s, {mb:.1f} MB (ffprobe)"
         self.run("Xuất nhanh MP4 (export.quick)", "Tìm lệnh…", "engine.execute export.quick {path, 8 Mbps, inOut}", quick)
 
         def palette():
@@ -875,9 +898,9 @@ class Check:
                 except OSError:
                     time.sleep(0.5)
             if st.startswith("Chưa làm được") or d <= 0 or code != 200:
-                self.row("Duyệt góp ý (review.open)", "Motion AYP", "click ayp.item.review.open", "FAIL", f"status {st!r}; clip {path} {d:.2f} s; page {code}")
+                self.row("Duyệt góp ý (review.open)", "Motion AYP", "click ayp.item.review.open", "FAIL", f"status {st!r}; clip <AYP work folder>/Render/{str(path).split('/Render/', 1)[-1]} {d:.2f} s; page {code}")
             else:
-                self.row("Duyệt góp ý (review.open)", "Motion AYP", "click ayp.item.review.open", "PASS", f"exported {d:.2f} s to {path} (8 Mbps); http://127.0.0.1:8765/ → {code}")
+                self.row("Duyệt góp ý (review.open)", "Motion AYP", "click ayp.item.review.open", "PASS", f"exported {d:.2f} s to <AYP work folder>/Render/{str(path).split('/Render/', 1)[-1]} (8 Mbps); http://127.0.0.1:8765/ → {code}")
             # review.import: one open note in the feedback file the page writes beside the clip
             if path:
                 fb = path + ".feedback.json"
@@ -924,6 +947,7 @@ def main():
     ap.add_argument("--model", default="whisper-large-v3-turbo")
     ap.add_argument("--out", default="docs/aypeditor-check.md")
     a = ap.parse_args()
+    a.work = os.path.abspath(a.work)
     app = App(a.port)
     # this run starts a new project: make sure the app is AYPEditor and nothing unsaved would be lost
     try:
@@ -934,28 +958,40 @@ def main():
         sys.exit(f"the app on port {a.port} is not AYPEditor (no ui.ayp.tabs / ui.ayp.state); refusing to touch it")
     if (proj.get("result") or {}).get("dirty"):
         sys.exit(f"AYPEditor on port {a.port} has unsaved changes in {proj['result'].get('name')!r}; save or close them first")
+    recent0 = app.res("prefs.get", {"key": "general.recentProjects"}) or []
     c = Check(app, a)
     t0 = time.time()
     tr = c.setup()
     print(f"setup: transcript {tr} in {time.time() - t0:.0f} s", flush=True)
     c.all()
     c.reset()
+    # leave the app on an empty project and File ▸ Open Recent as it was
+    app.ex("file.newProject", {"name": "Untitled"})
+    recent = app.res("prefs.get", {"key": "general.recentProjects"}) or []
+    app.ex("prefs.set", {"key": "general.recentProjects", "value": [x for x in recent if not os.path.abspath(x).startswith(a.work) or x in recent0]})
     counts = {}
     for r in c.rows:
-        k = r[3].split("(")[0] if r[3].startswith("PASS(") else r[3]
-        k = "PASS(…)" if r[3].startswith("PASS(") else k
-        counts[k] = counts.get(k, 0) + 1
-    summary = ", ".join(f"{k} {v}" for k, v in sorted(counts.items()))
+        counts[r[3]] = counts.get(r[3], 0) + 1
+    order = ["PASS", "PASS(dialog)", "PASS(panel)", "PASS(ai)", "PASS(cmd)", "PASS(no-op click)", "FAIL", "SKIP", "MANUAL"]
+    summary = " · ".join(f"{k} {counts[k]}" for k in sorted(counts, key=lambda k: order.index(k) if k in order else 99))
     poll = "\n".join(f"- `{w}` added {p} to the AYP dock" for w, p in c.pollution) or "- none: no command added a classic panel tab to the AYP dock"
+    try:
+        pr = json.loads(subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height:format=duration",
+                                        "-of", "json", a.media], capture_output=True, text=True, timeout=60).stdout)
+        clip = f"{pr['streams'][0]['width']}×{pr['streams'][0]['height']}, {float(pr['format']['duration']):.0f} s"
+    except (OSError, ValueError, KeyError, IndexError, subprocess.SubprocessError):
+        clip = "size unknown"
     md = f"""# AYPEditor: chạy thật các chức năng có sẵn trên clip thật
 
 Generated by `tools/ayp-editor/check_features.py` on {time.strftime('%Y-%m-%d %H:%M')} against a running AYPEditor
-(port {a.port}). Clip: `{os.path.basename(a.media)}` (first 60 s of `0716.mp4`, Vietnamese speech, 1080×1080) in a
-1080×1920 sequence; transcript by `{a.model}` (vi): {json.dumps(tr, ensure_ascii=False)}.
+(port {a.port}). Clip: `{os.path.basename(a.media)}` ({clip}, Vietnamese speech; second angle `{os.path.basename(a.media2)}`) in a
+1080×1920 sequence; transcript: {json.dumps(tr, ensure_ascii=False)}.
 
-Paths: `click` = ui.click on the AYP button, the way a person clicks it; `engine.execute` = the AI's path, used
-when the button opens a dialog (PASS(dialog)), points at the embedded classic panel (PASS(panel)) or is for the
-AI (PASS(ai)). Each row starts from the same state (history undone back, clip selected, playhead at 20 s).
+Paths: `click` = ui.click on the AYP button, the way a person clicks it (PASS). `engine.execute` = the AI's path,
+used when the button opens a dialog (PASS(dialog)), points at the embedded classic panel (PASS(panel)), is for the
+AI (PASS(ai)), or there is no AYP button (PASS(cmd): Thông số, Tìm lệnh…). PASS(no-op click): the click ran and
+said there was nothing to remove on this clip; the row shows the command cutting with other params. Each row
+starts from the same state (history undone back, clip selected, playhead at 20 s).
 
 **Result: {summary}** ({len(c.rows)} rows).
 
