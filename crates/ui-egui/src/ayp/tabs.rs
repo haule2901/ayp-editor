@@ -5,6 +5,17 @@
 use crate::dock::PanelKind;
 use crate::icons::Icon;
 
+/// How the panel treats a button.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    /// Invoke `cmd` with `params`.
+    Run,
+    /// Invoke nothing: focus the tab's `embed` panel and show a hint (the user must pick something there).
+    Panel,
+    /// Greyed out: "AI dùng lệnh này — hỏi trong tab AI hoặc Tìm lệnh…". Plan 2 enables it.
+    Ai,
+}
+
 pub struct Item {
     pub cmd: &'static str,
     /// JSON object passed to the command; `{}` lets the command open its own dialog.
@@ -13,6 +24,9 @@ pub struct Item {
     pub label: &'static str,
     /// Unique across `TABS`: the command id, or `effects.apply.<effect>` for effects.
     pub key: &'static str,
+    pub kind: Kind,
+    /// (cmd, params) pairs the panel runs right after a successful Run, on the new selection.
+    pub then: &'static [(&'static str, &'static str)],
 }
 
 pub struct Tab {
@@ -24,10 +38,16 @@ pub struct Tab {
 }
 
 const fn it(cmd: &'static str, params: &'static str, label: &'static str, key: &'static str) -> Item {
-    Item { cmd, params, label, key }
+    Item { cmd, params, label, key, kind: Kind::Run, then: &[] }
 }
 const fn c(cmd: &'static str, label: &'static str) -> Item {
     it(cmd, "{}", label, cmd)
+}
+const fn panel(cmd: &'static str, label: &'static str) -> Item {
+    Item { cmd, params: "{}", label, key: cmd, kind: Kind::Panel, then: &[] }
+}
+const fn ai(cmd: &'static str, label: &'static str) -> Item {
+    Item { cmd, params: "{}", label, key: cmd, kind: Kind::Ai, then: &[] }
 }
 
 pub const TABS: &[Tab] = &[
@@ -35,7 +55,7 @@ pub const TABS: &[Tab] = &[
         c("file.import", "Nhập tệp…"),
         c("audio.voiceover.start", "Bắt đầu ghi âm lời"),
         c("audio.voiceover.stop", "Dừng ghi âm"),
-        c("export.quick", "Xuất nhanh MP4"),
+        c("file.exportMedia", "Xuất video…"),
         c("export.queue.add", "Thêm vào hàng đợi xuất"),
     ]},
     Tab { id: "audio", icon: Icon::Speaker, label: "Âm thanh", embed: Some(PanelKind::EssentialSound), items: &[
@@ -48,13 +68,13 @@ pub const TABS: &[Tab] = &[
         it("sequence.applyAudioTransition", r#"{"effect":"constant_power","frames":24,"edge":"out"}"#, "Mờ dần", "audio.fadeOut"),
     ]},
     Tab { id: "text", icon: Icon::Type, label: "Văn bản", embed: Some(PanelKind::EssentialGraphics), items: &[
-        it("graphics.newText", r#"{"text":"Chữ mới","font":"Be Vietnam Pro","fontStyle":"SemiBold"}"#, "Thêm chữ", "graphics.newText"),
+        Item { then: &[("graphics.set", r#"{"props":{"font_style":"SemiBold","tracking":-60}}"#)], ..it("graphics.newText", r#"{"text":"Chữ mới","font":"Be Vietnam Pro"}"#, "Thêm chữ", "graphics.newText") },
         it("graphics.set", r#"{"props":{"font":"Be Vietnam Pro","font_style":"SemiBold","tracking":-60}}"#, "Kiểu chữ AYP (giãn −60)", "graphics.set"),
     ]},
     Tab { id: "captions", icon: Icon::Captions, label: "Phụ đề", embed: Some(PanelKind::Text), items: &[
         c("transcript.createCaptionsVi", "Phụ đề tiếng Việt…"),
-        c("transcript.captionsFromChunks", "Chia cụm theo nghĩa"),
-        c("captions.applyPreset", "Kiểu phụ đề lưu sẵn…"),
+        ai("transcript.captionsFromChunks", "Chia cụm phụ đề theo nghĩa (AI)"),
+        panel("captions.applyPreset", "Kiểu phụ đề lưu sẵn"),
     ]},
     Tab { id: "cut", icon: Icon::Razor, label: "Cắt bằng chữ", embed: Some(PanelKind::Text), items: &[
         c("transcript.removePauses", "Xoá khoảng lặng"),
@@ -62,10 +82,11 @@ pub const TABS: &[Tab] = &[
         c("transcript.lift", "Xoá chữ chọn (để lại khoảng trống)"),
         c("transcript.extract", "Xoá chữ chọn (kéo khít)"),
         c("markers.add", "Thêm marker"),
-        c("multicam.cut", "Cắt sang góc máy"),
+        c("multicam.cutToCamera1", "Cắt sang camera 1"),
+        c("multicam.cutToCamera2", "Cắt sang camera 2"),
     ]},
     Tab { id: "voice", icon: Icon::Mic, label: "Giọng đọc", embed: Some(PanelKind::TextToSpeech), items: &[
-        c("tts.create", "Tạo giọng đọc…"),
+        panel("tts.create", "Tạo giọng đọc"),
     ]},
     Tab { id: "effects", icon: Icon::Fx, label: "Hiệu ứng", embed: Some(PanelKind::Effects), items: &[
         it("effects.apply", r#"{"effect":"skin_smooth"}"#, "Làm mịn da", "effects.apply.skin_smooth"),
@@ -77,21 +98,22 @@ pub const TABS: &[Tab] = &[
         it("effects.apply", r#"{"effect":"crop"}"#, "Cắt khung", "effects.apply.crop"),
         c("clip.speedDuration", "Tốc độ / đảo ngược…"),
         c("clip.frameHold", "Dừng hình"),
-        it("masks.add", r#"{"shape":"ellipse"}"#, "Tạo mặt nạ", "masks.add"),
+        it("masks.add", r#"{"effect":"opacity","shape":"ellipse"}"#, "Tạo mặt nạ", "masks.add"),
         c("masks.track", "Mặt nạ bám theo vật"),
-        it("clip.nest", r#"{"name":"Nest"}"#, "Gộp thành nest", "clip.nest"),
+        c("clip.nest", "Gộp thành nest…"),
         c("clip.group", "Nhóm clip"),
     ]},
     Tab { id: "transitions", icon: Icon::Slide, label: "Chuyển tiếp", embed: Some(PanelKind::Effects), items: &[
         it("sequence.applyVideoTransition", r#"{"effect":"cross_dissolve","frames":12}"#, "Chuyển cảnh mờ", "sequence.applyVideoTransition"),
     ]},
     Tab { id: "color", icon: Icon::Adjust, label: "Màu", embed: Some(PanelKind::LumetriColor), items: &[
-        c("lumetri.applyPreset", "Bộ lọc màu…"),
-        c("lut.import", "Nhập LUT…"),
-        c("lumetri.applyMatch", "Khớp màu"),
+        panel("lumetri.applyPreset", "Bộ lọc màu"),
+        panel("lut.import", "Nhập LUT"),
+        panel("lumetri.applyMatch", "Khớp màu"),
     ]},
+    // ponytail: plain blur only; the keyframed blur-in/out version is deferred to plan 3.
     Tab { id: "motion", icon: Icon::Sparkle, label: "Motion AYP", embed: None, items: &[
-        it("effects.apply", r#"{"effect":"gaussian_blur"}"#, "Làm mờ cả video khi có minh hoạ", "motion.blur"),
+        it("effects.apply", r#"{"effect":"gaussian_blur"}"#, "Làm mờ cả clip (nền cho minh hoạ)", "motion.blur"),
         c("review.open", "Duyệt góp ý…"),
         c("review.import", "Góp ý thành marker"),
     ]},
@@ -157,14 +179,67 @@ mod tests {
             "graphics.newText", "transcript.createCaptionsVi", "transcript.captionsFromChunks", "captions.applyPreset",
             "transcript.removePauses", "transcript.removeFillers", "transcript.lift", "tts.create",
             "sequence.applyVideoTransition", "lumetri.applyPreset", "lut.import", "lumetri.applyMatch", "clip.speedDuration",
-            "clip.frameHold", "masks.add", "masks.track", "clip.nest", "clip.group", "multicam.cut", "markers.add", "review.open",
-            "review.import", "export.quick", "export.queue.add",
+            "clip.frameHold", "masks.add", "masks.track", "clip.nest", "clip.group", "multicam.cutToCamera1", "markers.add", "review.open",
+            "review.import", "file.exportMedia", "export.queue.add",
         ] {
             assert!(find_cmd(c).is_some(), "{c} không nằm ở thẻ nào");
         }
         for e in ["skin_smooth", "gaussian_blur", "warp_stabilizer", "auto_reframe", "ultra_key", "horizontal_flip", "crop", "denoise", "speech_enhance"] {
             assert!(TABS.iter().flat_map(|t| t.items).any(|i| i.key == format!("effects.apply.{e}")), "{e}");
         }
-        assert!(TABS.iter().map(|t| t.items.len()).sum::<usize>() >= 41);
+        let mut cmds: Vec<_> = TABS.iter().flat_map(|t| t.items.iter().map(|i| i.cmd)).collect();
+        cmds.sort();
+        cmds.dedup();
+        assert!(cmds.len() >= 30, "{}", cmds.len());
+    }
+
+    #[test]
+    fn panel_items_live_in_tabs_with_an_embedded_panel() {
+        for t in TABS {
+            for i in t.items.iter().filter(|i| i.kind == Kind::Panel) {
+                assert!(t.embed.is_some(), "{} is a Panel item but tab {} embeds nothing", i.key, t.id);
+            }
+        }
+    }
+
+    #[test]
+    fn then_commands_exist_and_are_json() {
+        for i in TABS.iter().flat_map(|t| t.items).filter(|i| !i.then.is_empty()) {
+            for (cmd, params) in i.then {
+                assert!(filmcraft_engine::find_command(cmd).is_some(), "{cmd}");
+                assert!(serde_json::from_str::<serde_json::Value>(params).unwrap().is_object());
+            }
+        }
+    }
+
+    fn run_item(s: &mut filmcraft_engine::Session, key: &str) -> serde_json::Value {
+        let i = TABS.iter().flat_map(|t| t.items).find(|i| i.key == key).unwrap();
+        let r = s.execute(i.cmd, serde_json::from_str(i.params).unwrap()).unwrap_or_else(|e| panic!("{}: {e}", i.cmd));
+        for (c, p) in i.then {
+            s.execute(c, serde_json::from_str(p).unwrap()).unwrap_or_else(|e| panic!("{c}: {e}"));
+        }
+        r
+    }
+
+    #[test]
+    fn add_text_sets_ayp_style_and_tracking_minus_60() {
+        let mut s = filmcraft_engine::Session::default();
+        s.execute("file.openDemoProject", serde_json::json!({})).unwrap();
+        let r = run_item(&mut s, "graphics.newText");
+        let id = filmcraft_project::ClipId(r["clip"].as_u64().unwrap());
+        let (_, item) = s.active_sequence().unwrap().find_item(id).unwrap();
+        let layer = item.effects.iter().find(|e| e.params.contains_key("tracking")).expect("a text layer with tracking");
+        let dump = format!("{:?} {:?}", layer.params["tracking"].value, layer.params.get("font").map(|p| &p.value));
+        assert!(dump.contains("-60"), "{dump}");
+        assert!(dump.contains("Be Vietnam Pro"), "{dump}");
+        let style = format!("{:?}", layer.params.iter().filter(|(k, _)| k.contains("style")).map(|(_, p)| &p.value).collect::<Vec<_>>());
+        assert!(style.contains("SemiBold"), "{style}");
+    }
+
+    #[test]
+    fn bare_run_items_work_on_the_demo_project() {
+        let mut s = filmcraft_engine::Session::default();
+        s.execute("file.openDemoProject", serde_json::json!({})).unwrap();
+        run_item(&mut s, "export.queue.add");
     }
 }
