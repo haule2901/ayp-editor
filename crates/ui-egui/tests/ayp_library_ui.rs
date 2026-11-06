@@ -155,6 +155,30 @@ fn scrolled_out_buttons_are_not_registered_over_the_toolbar() {
     assert!(inside(r), "{r:?}");
 }
 
+/// Xoá chữ chọn acts on the words picked in the transcript, like the Text panel's own Lift / Extract.
+#[test]
+fn lift_and_extract_use_the_words_picked_in_the_transcript() {
+    let mut d = Driver::launch(true);
+    let v = d.exec("sequence.inspect", json!({}));
+    let clip = &v["result"]["video"][0]["items"][0];
+    let (item, from) = (clip["item"].clone(), clip["sourceIn"].as_i64().unwrap());
+    let half = 254_016_000_000_i64 / 2;
+    let words: Vec<Value> = (0..6).map(|i| json!({"text": format!("chữ{i}"), "start": from + i * half, "end": from + (i + 1) * half})).collect();
+    d.exec("transcript.set", json!({"item": item, "transcript": {"language": "vi", "speakers": [], "words": words}}));
+    d.click("ayp.tab.cut");
+    let before = d.undo_len();
+    d.click("ayp.item.transcript.lift");
+    assert!(d.h.state().ui.status.contains("chọn chữ"), "{}", d.h.state().ui.status);
+    assert_eq!(d.undo_len(), before);
+    for key in ["transcript.lift", "transcript.extract"] {
+        d.h.state_mut().ui.transcript_sel = Some((2, 1));
+        let before = d.undo_len();
+        d.click(&format!("ayp.item.{key}"));
+        assert_eq!(d.undo_len(), before + 1, "{key}: {}", d.h.state().ui.status);
+        assert_eq!(d.h.state().ui.transcript_sel, None, "{key}");
+    }
+}
+
 #[test]
 fn no_open_sequence_shows_a_hint() {
     let d = Driver::launch(false);

@@ -23,11 +23,26 @@ pub(crate) fn click_item(app: &mut FilmcraftApp, ctx: &egui::Context, item: &Ite
         Kind::Panel => app.ui.status = "Chọn trong bảng bên dưới".into(),
         Kind::Ai => {}
         Kind::Run => {
-            for (cmd, params) in std::iter::once((item.cmd, item.params)).chain(item.then.iter().copied()) {
+            // Lift / Extract act on the words picked in the embedded Text panel, as its own buttons do.
+            let picked;
+            let params = if matches!(item.cmd, "transcript.lift" | "transcript.extract") {
+                let Some((a, b)) = app.ui.transcript_sel else {
+                    app.ui.status = "Chưa làm được: chọn chữ trong bản chép lời bên dưới trước".into();
+                    return;
+                };
+                picked = serde_json::json!({"from": a.min(b), "to": a.max(b)}).to_string();
+                picked.as_str()
+            } else {
+                item.params
+            };
+            for (cmd, params) in std::iter::once((item.cmd, params)).chain(item.then.iter().copied()) {
                 if let Err(e) = run(app, ctx, cmd, params) {
                     app.ui.status = format!("Chưa làm được: {}", vi::reason(&e));
                     return;
                 }
+            }
+            if params != item.params {
+                app.ui.transcript_sel = None;
             }
         }
     }
