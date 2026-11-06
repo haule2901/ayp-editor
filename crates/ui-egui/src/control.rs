@@ -57,6 +57,13 @@ pub enum Outcome {
     },
 }
 
+fn side_name(s: crate::state::AypSideTab) -> &'static str {
+    match s {
+        crate::state::AypSideTab::Props => "props",
+        crate::state::AypSideTab::Ai => "ai",
+    }
+}
+
 fn ok(v: Value) -> Outcome {
     Outcome::Done(json!({"ok": true, "result": v}))
 }
@@ -114,6 +121,56 @@ pub fn handle(app: &mut FilmcraftApp, ctx: &egui::Context, req: &ControlRequest)
         },
         "ui.menu.list" => ok(serde_json::to_value(crate::menus::menu_items(app)).unwrap_or_default()),
         "ui.inspect" => ok(inspect(app, ctx)),
+        "ui.ayp.state" => ok(json!({
+            "workspace": app.ui.workspace,
+            "tab": app.ui.ayp_tab,
+            "side": side_name(app.ui.ayp_side),
+            "palette": app.ui.ayp_palette,
+            "selection": app.session.state.selection.iter().map(|c| c.0).collect::<Vec<_>>(),
+            "playhead": app.session.playhead().0,
+            "sequence": app.session.state.active_sequence.map(|i| i.0),
+        })),
+        "ui.ayp.tabs" => {
+            use crate::ayp::tabs::{Kind, TABS};
+            ok(Value::Array(TABS.iter().map(|t| json!({
+                "id": t.id,
+                "label": t.label,
+                "items": t.items.iter().map(|i| json!({
+                    "key": i.key,
+                    "cmd": i.cmd,
+                    "params": serde_json::from_str::<Value>(i.params).unwrap_or(json!({})),
+                    "label": i.label,
+                    "kind": match i.kind { Kind::Run => "run", Kind::Panel => "panel", Kind::Ai => "ai" },
+                })).collect::<Vec<_>>(),
+            })).collect()))
+        }
+        "ui.ayp.open" => {
+            let tab = s("tab");
+            if let Some(t) = tab
+                && !crate::ayp::tabs::TABS.iter().any(|x| x.id == t)
+            {
+                return err(format!("unknown tab `{t}`"));
+            }
+            let side = match s("side") {
+                None => None,
+                Some("props") => Some(crate::state::AypSideTab::Props),
+                Some("ai") => Some(crate::state::AypSideTab::Ai),
+                Some(o) => return err(format!("unknown side `{o}` (props | ai)")),
+            };
+            if app.ui.workspace != "AYP" {
+                match crate::dock::find(&app.workspaces, "AYP") {
+                    Some(w) => app.set_workspace(&w),
+                    None => return err("no AYP workspace"),
+                }
+            }
+            if let Some(t) = tab {
+                app.ui.ayp_tab = t.to_string();
+            }
+            if let Some(sd) = side {
+                app.ui.ayp_side = sd;
+            }
+            ok(json!({"tab": app.ui.ayp_tab, "side": side_name(app.ui.ayp_side)}))
+        }
         "perf.stats" => ok(crate::perf::stats(app)),
         "ui.elements" => {
             if app.timeline_still < 2 {
