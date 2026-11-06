@@ -461,6 +461,9 @@ pub struct UiState {
     #[serde(default)]
     pub effect_controls_split: f32,
     pub show_menu_bar: bool,
+    /// Open tab of the AYP left panel (id from `ayp::tabs::TABS`).
+    #[serde(default = "default_ayp_tab")]
+    pub ayp_tab: String,
     /// The header bar (Home, Import, Edit, Export, workspaces). An app that embeds FilmCraft can hide it.
     #[serde(default = "shown")]
     pub show_header: bool,
@@ -950,6 +953,10 @@ pub struct GfxEdit {
     pub anchor: usize,
 }
 
+fn default_ayp_tab() -> String {
+    "media".into()
+}
+
 fn shown() -> bool {
     true
 }
@@ -985,6 +992,7 @@ impl Default for UiState {
             show_menu_bar: true,
             show_header: true,
             show_status_bar: true,
+            ayp_tab: default_ayp_tab(),
             dark: true,
             show_scopes: false,
             status: String::new(),
