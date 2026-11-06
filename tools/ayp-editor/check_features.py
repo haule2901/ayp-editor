@@ -16,6 +16,9 @@ Paths:
 - "panel": the button points at the embedded classic panel; the command runs with params a person picks there.
 - "ai": the button is for the AI; the command runs with params the AI would send.
 Results: PASS, PASS(dialog|panel|ai), FAIL (with the error), SKIP, MANUAL. Stdlib only.
+
+Safety: it refuses to run unless the app on --port is AYPEditor (answers ui.ayp.tabs, ui.ayp.state has a
+workspace) with no unsaved changes, because it starts a new project. FilmCraft AYP's 9879 is never the default.
 """
 import argparse
 import json
@@ -914,7 +917,7 @@ def table(rows):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--port", type=int, default=9879)
+    ap.add_argument("--port", type=int, default=9899, help="AYPEditor's control port (never FilmCraft AYP's 9879)")
     ap.add_argument("--media", required=True, help="clip with Vietnamese speech, copied to a temp folder first")
     ap.add_argument("--media2", required=True, help="a second clip (import and multicam angle)")
     ap.add_argument("--work", required=True, help="temp folder for the project and the exports")
@@ -922,6 +925,15 @@ def main():
     ap.add_argument("--out", default="docs/aypeditor-check.md")
     a = ap.parse_args()
     app = App(a.port)
+    # this run starts a new project: make sure the app is AYPEditor and nothing unsaved would be lost
+    try:
+        tabs, state, proj = app.call("ui.ayp.tabs"), app.call("ui.ayp.state"), app.call("engine.execute", {"id": "project.inspect"})
+    except OSError as e:
+        sys.exit(f"nothing answers on 127.0.0.1:{a.port} ({e}); start AYPEditor with --control {a.port}")
+    if not (tabs.get("ok") and "workspace" in (state.get("result") or {})):
+        sys.exit(f"the app on port {a.port} is not AYPEditor (no ui.ayp.tabs / ui.ayp.state); refusing to touch it")
+    if (proj.get("result") or {}).get("dirty"):
+        sys.exit(f"AYPEditor on port {a.port} has unsaved changes in {proj['result'].get('name')!r}; save or close them first")
     c = Check(app, a)
     t0 = time.time()
     tr = c.setup()
