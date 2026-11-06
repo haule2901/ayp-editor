@@ -50,6 +50,10 @@ const fn ai(cmd: &'static str, label: &'static str) -> Item {
     Item { cmd, params: "{}", label, key: cmd, kind: Kind::Ai, then: &[] }
 }
 
+/// Transcribe in Vietnamese with the model AYP installs, whatever Settings ▸ Media Analysis says (its
+/// defaults, whisper-base and English, are wrong for AYP and the base model is usually not downloaded).
+const TRANSCRIBE_VI: &str = r#"{"model":"whisper-large-v3-turbo","language":"vi"}"#;
+
 pub const TABS: &[Tab] = &[
     Tab { id: "media", icon: Icon::Folder, label: "Phương tiện", embed: Some(PanelKind::Project), items: &[
         c("file.import", "Nhập tệp…"),
@@ -72,11 +76,13 @@ pub const TABS: &[Tab] = &[
         it("graphics.set", r#"{"props":{"font":"Be Vietnam Pro","font_style":"SemiBold","tracking":-60}}"#, "Kiểu chữ AYP (giãn −60)", "graphics.set"),
     ]},
     Tab { id: "captions", icon: Icon::Captions, label: "Phụ đề", embed: Some(PanelKind::Text), items: &[
+        it("transcript.generate", TRANSCRIBE_VI, "Chép lời (tiếng Việt)", "captions.transcribe"),
         c("transcript.createCaptionsVi", "Phụ đề tiếng Việt…"),
         ai("transcript.captionsFromChunks", "Chia cụm phụ đề theo nghĩa (AI)"),
         panel("captions.applyPreset", "Kiểu phụ đề lưu sẵn"),
     ]},
     Tab { id: "cut", icon: Icon::Razor, label: "Cắt bằng chữ", embed: Some(PanelKind::Text), items: &[
+        it("transcript.generate", TRANSCRIBE_VI, "Chép lời (tiếng Việt)", "transcript.generate"),
         c("transcript.removePauses", "Xoá khoảng lặng"),
         // The engine's default list is English only ("um", "uh"…): add the Vietnamese hesitation sounds.
         // Words that also carry meaning (à, ừ, thì, kiểu…) are left to the editor.
@@ -217,6 +223,18 @@ mod tests {
                 assert!(serde_json::from_str::<serde_json::Value>(params).unwrap().is_object());
             }
         }
+    }
+
+    #[test]
+    fn transcribe_comes_first_where_a_transcript_is_needed_and_names_a_real_model() {
+        for tab in ["cut", "captions"] {
+            let t = TABS.iter().find(|t| t.id == tab).unwrap();
+            assert_eq!(t.items[0].cmd, "transcript.generate", "{tab}");
+        }
+        let p: serde_json::Value = serde_json::from_str(TRANSCRIBE_VI).unwrap();
+        assert_eq!(p["language"], "vi");
+        let models = filmcraft_engine::Session::default().execute("transcript.models", serde_json::json!({})).unwrap();
+        assert!(models["models"].as_array().unwrap().iter().any(|m| m["id"] == p["model"]), "{models}");
     }
 
     fn run_item(s: &mut filmcraft_engine::Session, key: &str) -> serde_json::Value {
