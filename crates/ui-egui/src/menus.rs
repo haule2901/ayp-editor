@@ -114,6 +114,8 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     uic!("window.workspace.audio", "Audio", ["Window", "Workspaces"], Some("Alt+Shift+5")),
     uic!("window.workspace.captionsandgraphics", "Captions and Graphics", ["Window", "Workspaces"], Some("Alt+Shift+6")),
     uic!("window.workspace.allpanels", "All Panels", ["Window", "Workspaces"], None),
+    uic!("window.ayp.advanced", "Advanced Mode", ["Window"], None),
+    uic!("window.ayp.simple", "AYP Interface", ["Window"], None),
     uic!("window.workspace.reset", "Reset to Saved Layout", ["Window", "Workspaces"], Some("Alt+Shift+0")),
     uic!("window.workspace.saveChanges", "Save Changes to this Workspace", ["Window", "Workspaces"], None),
     uic!("window.workspace.saveAs", "Save as New Workspace…", ["Window", "Workspaces"], None),
@@ -258,6 +260,11 @@ pub fn invoke(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, mut params:
         app.show_panel(p);
         return Ok(Value::Null);
     }
+    let id = match id {
+        "window.ayp.advanced" => "window.workspace.editing",
+        "window.ayp.simple" => "window.workspace.ayp",
+        other => other,
+    };
     if let Some(r) = crate::panels::workspaces::route(app, id, &params) {
         return r;
     }

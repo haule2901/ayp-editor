@@ -165,6 +165,7 @@ fn save_switch_reset_rename_delete_and_restart() {
             "All Panels",
             "Assembly",
             "Audio",
+            "AYP",
             "Captions and Graphics",
             "Color",
             "Cutting",

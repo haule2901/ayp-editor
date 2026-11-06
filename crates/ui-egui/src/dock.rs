@@ -40,10 +40,13 @@ pub enum PanelKind {
     ReferenceMonitor,
     Timecode,
     ProjectNotes,
+    AypLibrary,
+    AypSide,
+    AypToolbar,
 }
 
 impl PanelKind {
-    pub const ALL: [PanelKind; 28] = [
+    pub const ALL: [PanelKind; 31] = [
         PanelKind::Project,
         PanelKind::MediaBrowser,
         PanelKind::Libraries,
@@ -72,6 +75,9 @@ impl PanelKind {
         PanelKind::ReferenceMonitor,
         PanelKind::Timecode,
         PanelKind::ProjectNotes,
+        PanelKind::AypLibrary,
+        PanelKind::AypSide,
+        PanelKind::AypToolbar,
     ];
     pub fn title(self) -> &'static str {
         match self {
@@ -103,6 +109,9 @@ impl PanelKind {
             PanelKind::ReferenceMonitor => "Reference Monitor",
             PanelKind::Timecode => "Timecode",
             PanelKind::ProjectNotes => "Project Notes",
+            PanelKind::AypLibrary => "AYP Library",
+            PanelKind::AypSide => "AYP Side",
+            PanelKind::AypToolbar => "AYP Toolbar",
         }
     }
     pub fn id(self) -> String {
@@ -129,7 +138,7 @@ impl PanelKind {
     }
     /// Narrow chrome-less panels (no tab strip; a slim grip instead).
     pub fn compact(self) -> bool {
-        matches!(self, PanelKind::Tools | PanelKind::AudioMeters)
+        matches!(self, PanelKind::Tools | PanelKind::AudioMeters | PanelKind::AypLibrary | PanelKind::AypSide | PanelKind::AypToolbar)
     }
 }
 
@@ -177,7 +186,7 @@ fn vsplit(size: SplitSize, a: DockNode, b: DockNode) -> DockNode {
     DockNode::Split { vertical: true, size, a: Box::new(a), b: Box::new(b) }
 }
 
-pub const WORKSPACES: [&str; 9] = ["Editing", "Assembly", "Color", "Effects", "Audio", "Captions and Graphics", "Learning", "Review", "All Panels"];
+pub const WORKSPACES: [&str; 10] = ["Editing", "Assembly", "Color", "Effects", "Audio", "Captions and Graphics", "Learning", "Review", "All Panels", "AYP"];
 
 /// The user's workspaces file, beside `preferences.json` in the data directory.
 pub const WORKSPACES_FILE: &str = "workspaces.json";
@@ -307,12 +316,23 @@ fn migrate_legacy_effects(root: &mut DockNode) {
     }
 }
 
+/// The workspace AYPEditor opens with: "AYP" on its first launch only (`already_introduced` is the
+/// marker file), else `None` and the workspace in use last time stays.
+pub fn initial_workspace(_prefs: &WorkspacePrefs, ayp_default: bool, already_introduced: bool) -> Option<String> {
+    (ayp_default && !already_introduced).then(|| "AYP".to_string())
+}
+
 /// The default layout of a named workspace.
 pub fn workspace(name: &str) -> DockNode {
     use PanelKind::*;
     use SplitSize::*;
     let bottom_editing = || hsplit(FixedA(64.0), tabs(&[Tools], 0), hsplit(FixedB(116.0), tabs(&[Timeline], 0), tabs(&[AudioMeters], 0)));
     match name {
+        "AYP" => vsplit(
+            Ratio(0.6),
+            hsplit(FixedA(300.0), tabs(&[AypLibrary], 0), hsplit(FixedB(360.0), tabs(&[Program], 0), tabs(&[AypSide], 0))),
+            vsplit(FixedA(34.0), tabs(&[AypToolbar], 0), tabs(&[Timeline], 0)),
+        ),
         "Assembly" => vsplit(
             Ratio(0.52),
             hsplit(
@@ -898,6 +918,15 @@ pub fn placeholder(ui: &mut egui::Ui, rect: Rect, t: &Tokens, text: &str) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn initial_workspace_only_on_the_first_ayp_launch() {
+        let p = WorkspacePrefs::default();
+        assert_eq!(initial_workspace(&p, true, false).as_deref(), Some("AYP"));
+        assert_eq!(initial_workspace(&p, true, true), None);
+        assert_eq!(initial_workspace(&p, false, false), None);
+        assert_eq!(initial_workspace(&p, false, true), None);
+    }
+
     use super::*;
 
     #[test]

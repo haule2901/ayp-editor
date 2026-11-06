@@ -383,6 +383,10 @@ pub struct FilmcraftApp {
     /// Settings ▸ Appearance ▸ UI Scale last applied, with the system scale it was applied for.
     applied_ui_scale: Option<(Option<f32>, f32)>,
     workspace_restored: bool,
+    /// AYPEditor: open the "AYP" workspace on the first launch and autosave its layout.
+    pub ayp_default: bool,
+    /// The AYP layout as last saved (or loaded); a different dock means a change to save.
+    ayp_saved: Option<dock::Layout>,
     /// Window ▸ Workspaces: saved layouts ([`dock::WORKSPACES_FILE`] in the data directory).
     pub workspaces: dock::WorkspacePrefs,
     /// Workspace names and the current one, as last handed to the native menu.
@@ -603,6 +607,8 @@ impl FilmcraftApp {
             applied_prefs: None,
             applied_ui_scale: None,
             workspace_restored: false,
+            ayp_default: false,
+            ayp_saved: None,
             workspaces,
             menu_workspaces: Default::default(),
         }
@@ -756,11 +762,45 @@ impl FilmcraftApp {
         if prev.is_none() && !self.workspace_restored {
             // reopen the workspace in use when the app last closed
             self.workspace_restored = true;
-            if let Some(w) = dock::find(&self.workspaces, &self.workspaces.current) {
+            let marker = self.ayp_marker_path();
+            let introduced = marker.as_ref().is_some_and(|m| m.exists());
+            if let Some(w) = dock::initial_workspace(&self.workspaces, self.ayp_default, introduced) {
+                self.set_workspace(&w);
+                if let Some(m) = marker {
+                    // ponytail: a failed write just means AYP opens again next launch
+                    let _ = std::fs::write(m, r#"{"introduced":true}"#);
+                }
+            } else if let Some(w) = dock::find(&self.workspaces, &self.workspaces.current) {
                 self.set_workspace(&w);
             }
         }
         self.applied_prefs = Some(p);
+    }
+
+    /// `aypeditor.json`: written once the AYP workspace has been opened by default.
+    fn ayp_marker_path(&self) -> Option<std::path::PathBuf> {
+        let dir = self.session.prefs_path.as_ref().and_then(|p| p.parent()).map(|d| d.to_path_buf()).or_else(filmcraft_engine::autosave::default_data_dir)?;
+        Some(dir.join("aypeditor.json"))
+    }
+
+    /// AYPEditor: keep the AYP workspace's layout as the user left it, writing only on a change.
+    fn autosave_ayp_layout(&mut self) {
+        if !self.ayp_default || self.ui.workspace != "AYP" {
+            self.ayp_saved = None;
+            return;
+        }
+        let now = dock::Layout { root: self.ui.dock.clone(), floating: self.ui.floating.clone() };
+        if self.ayp_saved.as_ref() == Some(&now) {
+            return;
+        }
+        // first frame in AYP: the layout just loaded is the saved one
+        let first = self.ayp_saved.is_none();
+        self.ayp_saved = Some(now);
+        if !first {
+            if let Err(e) = panels::workspaces::route(self, "window.workspace.saveChanges", &serde_json::Value::Null).unwrap_or(Ok(serde_json::Value::Null)) {
+                self.ui.status = e;
+            }
+        }
     }
 
     /// Every sequence has its own Timeline view (zoom, scroll, track heights), as Premiere's
@@ -1755,6 +1795,7 @@ impl FilmcraftApp {
         }
         self.sync_pool();
         self.apply_prefs(&ctx);
+        self.autosave_ayp_layout();
         #[cfg(not(target_arch = "wasm32"))]
         self.tick_media_refresh(&ctx);
         for ev in self.session.drain_events() {

@@ -247,6 +247,7 @@ fn app_creator(launch: Launch, graphics: graphics::GraphicsStart, created: Arc<A
             }
         }
         let mut app = FilmcraftApp::new(session);
+        app.ayp_default = std::env::var("AYP_EDITOR").is_ok_and(|v| v == "1");
         app.graphics_notice = notice;
         if recover == Some(false) {
             app.dialog = None;
