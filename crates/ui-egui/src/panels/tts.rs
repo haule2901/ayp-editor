@@ -206,7 +206,7 @@ pub fn follow_selection(app: &mut FilmcraftApp) {
                 d.pace = n.pace;
                 d.loaded_from = Some((clip.0, item));
                 if first_time {
-                    app.show_panel(crate::dock::PanelKind::TextToSpeech);
+                    app.reveal_panel(crate::dock::PanelKind::TextToSpeech);
                 }
             }
         }

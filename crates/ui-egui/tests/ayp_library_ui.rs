@@ -179,25 +179,33 @@ fn lift_and_extract_use_the_words_picked_in_the_transcript() {
     }
 }
 
-/// A command that brings up a panel the AYP layout embeds (Text to Speech when a narration is selected,
-/// the Text panel…) opens the AYP tab holding it instead of adding a classic tab to the layout.
+/// An automatic reveal of a panel the AYP layout embeds (Text to Speech when a narration is selected, the
+/// Text panel on a caption double-click…) opens the AYP tab holding it instead of adding a classic tab; a
+/// deliberate Window ▸ panel / `ui.panel.show` still opens the classic panel.
 #[test]
 fn embedded_panels_open_their_ayp_tab_instead_of_a_classic_tab() {
     use filmcraft_ui_egui::dock::PanelKind;
     let mut d = Driver::launch(true);
     for (panel, tab) in [(PanelKind::TextToSpeech, "voice"), (PanelKind::Text, "captions"), (PanelKind::Project, "media"), (PanelKind::Effects, "effects")] {
-        d.h.state_mut().show_panel(panel);
+        d.h.state_mut().reveal_panel(panel);
         d.frames(2);
         assert!(!d.h.state().ui.dock.contains(panel), "{panel:?} was added to the AYP dock");
         assert_eq!(d.h.state().ui.ayp_tab, tab, "{panel:?}");
     }
     d.h.state_mut().ui.ayp_side = filmcraft_ui_egui::state::AypSideTab::Ai;
-    d.h.state_mut().show_panel(PanelKind::Properties);
+    d.h.state_mut().reveal_panel(PanelKind::Properties);
     assert!(!d.h.state().ui.dock.contains(PanelKind::Properties));
     assert_eq!(d.h.state().ui.ayp_side, filmcraft_ui_egui::state::AypSideTab::Props);
+    // asked for on purpose: the classic panel opens
+    let v = d.call("ui.panel.show", json!({"panel": "Text to Speech"}));
+    assert_eq!(v["ok"], json!(true), "{v}");
+    d.frames(2);
+    assert!(d.h.state().ui.dock.contains(PanelKind::TextToSpeech));
+    d.exec("window.panel.lumetriColor", json!({}));
+    d.frames(2);
+    assert!(d.h.state().ui.dock.contains(PanelKind::LumetriColor));
 }
 
-/// Xoá từ đệm removes Vietnamese hesitation sounds, not only the engine's English list.
 #[test]
 fn remove_fillers_knows_vietnamese_hesitations() {
     let mut d = Driver::launch(true);

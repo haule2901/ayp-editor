@@ -468,7 +468,7 @@ fn project_panel(app: &mut FilmcraftApp, op: &str) -> Result<Value, String> {
 
 fn text_panel(app: &mut FilmcraftApp, op: &str) -> Result<Value, String> {
     if op == "showProgramTranscript" {
-        app.show_panel(PanelKind::Text);
+        app.reveal_panel(PanelKind::Text);
         app.ui.text_tab = "Transcript".into();
         return Ok(json!({"tab": "Transcript"}));
     }

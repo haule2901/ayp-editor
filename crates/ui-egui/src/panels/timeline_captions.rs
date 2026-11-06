@@ -218,7 +218,7 @@ fn interact_block(
         });
     }
     if resp.double_clicked() {
-        app.show_panel(PanelKind::Text);
+        app.reveal_panel(PanelKind::Text);
         app.ui.text_tab = "Captions".into();
         actions.push(("captions.goTo".into(), json!({"caption": c.id.0})));
         return;

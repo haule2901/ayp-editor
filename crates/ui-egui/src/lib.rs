@@ -905,12 +905,11 @@ impl FilmcraftApp {
         }
     }
 
-    pub fn show_panel(&mut self, p: PanelKind) {
-        if p == PanelKind::Timeline && !self.ui.floating.iter().any(|group| group.panels.contains(&p)) {
-            self.ui.dock.restore_timeline();
-        }
-        // AYP layout: a panel it embeds is shown by opening the AYP tab that holds it, never added as a
-        // classic tab (selecting a narration used to put Text to Speech beside Program for good).
+    /// An automatic reveal (a narration got selected, a caption was double-clicked, Show Transcript,
+    /// Reveal in Project): in the AYP layout a panel it embeds is shown by opening the AYP tab that holds it
+    /// instead of adding a classic tab for good. A deliberate Window ▸ panel / `ui.panel.show` still uses
+    /// [`Self::show_panel`].
+    pub fn reveal_panel(&mut self, p: PanelKind) {
         if self.ui.dock.contains(PanelKind::AypLibrary) && !self.ui.dock.contains(p) && !self.ui.floating.iter().any(|group| group.panels.contains(&p)) {
             if let Some(tab) = crate::ayp::tabs::TABS.iter().find(|t| t.embed == Some(p)) {
                 self.ui.ayp_tab = tab.id.into();
@@ -922,6 +921,13 @@ impl FilmcraftApp {
                 self.ui.focused = p;
                 return;
             }
+        }
+        self.show_panel(p);
+    }
+
+    pub fn show_panel(&mut self, p: PanelKind) {
+        if p == PanelKind::Timeline && !self.ui.floating.iter().any(|group| group.panels.contains(&p)) {
+            self.ui.dock.restore_timeline();
         }
         if !self.ui.dock.contains(p) && !self.ui.floating.iter().any(|group| group.panels.contains(&p)) {
             let near = match p {
@@ -987,7 +993,7 @@ impl FilmcraftApp {
         self.ui.project_panel.active_tab = None;
         self.ui.project_panel.selected_bin = None;
         self.ui.project_search.clear();
-        self.show_panel(PanelKind::Project);
+        self.reveal_panel(PanelKind::Project);
     }
 
     pub fn status(&mut self, s: impl Into<String>) {
