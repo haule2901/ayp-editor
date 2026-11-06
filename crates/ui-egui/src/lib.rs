@@ -1714,6 +1714,30 @@ impl FilmcraftApp {
         ctx.request_repaint_after(std::time::Duration::from_secs_f64(wait));
     }
 
+    /// Seconds a toast stays on screen.
+    const TOAST_SECS: f64 = 6.0;
+
+    /// Draw `self.toast` as a small overlay at the bottom centre; it clears itself after
+    /// [`Self::TOAST_SECS`].
+    fn show_toast(&mut self, ctx: &egui::Context) {
+        let Some((msg, since)) = &self.toast else { return };
+        let left = Self::TOAST_SECS - (ctx.input(|i| i.time) - since);
+        if left <= 0.0 {
+            self.toast = None;
+            return;
+        }
+        egui::Area::new(egui::Id::new("app_toast"))
+            .order(egui::Order::Tooltip)
+            .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -48.0))
+            .interactable(false)
+            .show(ctx, |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.label(msg.as_str());
+                });
+            });
+        ctx.request_repaint_after(std::time::Duration::from_secs_f64(left.min(1.0)));
+    }
+
     fn frame(&mut self, ui: &mut egui::Ui) {
         i18n::set_current(self.ui.language);
         if std::mem::take(&mut self.panic_next_frame) {
@@ -2114,6 +2138,7 @@ impl eframe::App for FilmcraftApp {
             self.playback.playing = false;
         }
         self.error_window(ui.ctx());
+        self.show_toast(ui.ctx());
         if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| graphics_notice::show(self, ui.ctx()))).is_err() {
             // a broken notice must not take the session down: drop it
             self.graphics_notice = None;
