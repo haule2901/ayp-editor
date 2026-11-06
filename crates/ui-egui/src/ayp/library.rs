@@ -16,6 +16,14 @@ fn gcd(a: u32, b: u32) -> u32 {
 fn run(app: &mut FilmcraftApp, ctx: &egui::Context, cmd: &str, params: &str) -> Result<serde_json::Value, String> {
     let p = serde_json::from_str(params).map_err(|e| e.to_string())?;
     let r = crate::menus::invoke(app, ctx, cmd, p);
+    // Chuẩn hoá âm lượng on a clip nobody has tagged yet: treat it as speech (Dialogue), as a talking clip is.
+    if cmd == "essentialSound.autoMatch"
+        && r.as_ref().is_err_and(|e| e.contains("no clips with an audio type"))
+        && crate::menus::invoke(app, ctx, "essentialSound.setType", serde_json::json!({"type": "dialogue"})).is_ok()
+    {
+        let p = serde_json::from_str(params).map_err(|e| e.to_string())?;
+        return crate::menus::invoke(app, ctx, cmd, p);
+    }
     r
 }
 

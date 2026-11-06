@@ -233,6 +233,22 @@ fn a_cleanup_that_finds_nothing_says_so() {
     assert_eq!(d.h.state().ui.status, "Không tìm thấy chỗ nào để xoá");
 }
 
+/// Chuẩn hoá âm lượng works on a clip nobody tagged: it is treated as speech first.
+#[test]
+fn auto_match_tags_an_untagged_clip_as_dialogue() {
+    let mut d = Driver::launch(true);
+    let v = d.exec("sequence.inspect", json!({}));
+    let a = v["result"]["audio"][0]["items"][0]["clip"].clone();
+    d.exec("timeline.select", json!({"clips": [a]}));
+    d.click("ayp.tab.audio");
+    let before = d.undo_len();
+    d.click("ayp.item.essentialSound.autoMatch");
+    assert!(!d.h.state().ui.status.starts_with("Chưa làm được"), "{}", d.h.state().ui.status);
+    assert!(d.undo_len() >= before + 1);
+    let es = d.exec("essentialSound.inspect", json!({"clips": [a]}));
+    assert!(es.to_string().contains("ialogue"), "{es}");
+}
+
 #[test]
 fn no_open_sequence_shows_a_hint() {
     let d = Driver::launch(false);
