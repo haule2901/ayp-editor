@@ -127,6 +127,34 @@ fn panel_items_only_point_at_the_panel_and_ai_items_do_nothing() {
     assert_eq!(d.undo_len(), before);
 }
 
+/// A button scrolled out of the list must not be clickable by id: its rect lies over the toolbar.
+#[test]
+fn scrolled_out_buttons_are_not_registered_over_the_toolbar() {
+    let mut d = Driver::launch(true);
+    d.click("ayp.tab.effects");
+    let rect = |d: &Driver, id: &str| d.h.state().auto.query(id).iter().find(|e| e.id == id).map(|e| e.rect);
+    let lib = rect(&d, "panel.AypLibrary").expect("library panel");
+    let inside = |r: [f32; 4]| {
+        let (x, y) = (r[0] + r[2] / 2.0, r[1] + r[3] / 2.0);
+        x >= lib[0] && x <= lib[0] + lib[2] && y >= lib[1] && y <= lib[1] + lib[3]
+    };
+    for e in d.h.state().auto.query("ayp.item.") {
+        assert!(inside(e.rect), "{} at {:?} is outside the library {:?}", e.id, e.rect, lib);
+    }
+    // the last button is reached by scrolling the list
+    let top = rect(&d, "ayp.item.effects.apply.skin_smooth").expect("first button");
+    for _ in 0..12 {
+        if d.has("ayp.item.clip.group") {
+            break;
+        }
+        let v = d.call("ui.scroll", json!({"x": top[0] + top[2] / 2.0, "y": top[1] + top[3] / 2.0, "dy": -120.0}));
+        assert_eq!(v["ok"], json!(true), "{v}");
+        d.frames(2);
+    }
+    let r = rect(&d, "ayp.item.clip.group").expect("Nhóm clip is reachable by scrolling");
+    assert!(inside(r), "{r:?}");
+}
+
 #[test]
 fn no_open_sequence_shows_a_hint() {
     let d = Driver::launch(false);

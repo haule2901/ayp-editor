@@ -107,7 +107,10 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 Kind::Ai => resp.on_disabled_hover_text("AI dùng lệnh này — hỏi trong tab AI hoặc Tìm lệnh…"),
                 _ => resp.on_hover_text(item.cmd),
             };
-            app.auto.add_response(&format!("ayp.item.{}", item.key), &resp, item.label);
+            // Scrolled-out buttons are not registered: a click on their rect would land on the toolbar below.
+            if ui.clip_rect().contains(resp.rect.center()) {
+                app.auto.add_response(&format!("ayp.item.{}", item.key), &resp, item.label);
+            }
             if resp.clicked() {
                 click_item(app, &ctx, item);
             }
