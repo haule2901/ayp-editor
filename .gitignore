@@ -6,3 +6,6 @@ plan/
 .DS_Store
 .claude/worktrees/
 __pycache__/
+
+# AYP Editor: bản phác lúc brainstorm
+.superpowers/
