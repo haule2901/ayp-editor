@@ -72,6 +72,13 @@ mod tests {
         assert_eq!(reason("select a clip"), "Hãy chọn một đoạn phim.");
     }
     #[test]
+    fn reasons_do_not_repeat_the_prefix_the_panel_adds() {
+        // the panel shows "Chưa làm được: <reason>"
+        assert!(!reason("select clips first").starts_with("Chưa làm được"));
+        assert!(reason("invalid parameters for `essentialSound.generateDucking`: select Music or Ambience clips (ducking applies to those types)").contains("Nhạc"));
+        assert!(reason("no multi-camera clip at the playhead").contains("đa camera"));
+    }
+    #[test]
     fn tsv_parses_cleanly() {
         assert!(crate::i18n::catalog::parse_entries(TSV).1.is_empty());
     }

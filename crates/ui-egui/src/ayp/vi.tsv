@@ -278,7 +278,9 @@ syn	Close Gap	khoảng trống|lấp chỗ trống
 syn	Mark In	điểm vào|đánh dấu
 syn	Mark Out	điểm ra|đánh dấu
 syn	Duyệt góp ý (AYP)…	duyệt|góp ý|review
-err	select clips first	Chưa làm được: hãy chọn đoạn phim trên dòng thời gian trước.
+err	select clips first	Hãy chọn đoạn phim trên dòng thời gian trước.
+err	select Music or Ambience clips	Hãy chọn đoạn nhạc nền đã gắn loại Nhạc (Music) hoặc Môi trường (Ambience) ở bảng bên dưới.
+err	no multi-camera clip at the playhead	Không có đoạn đa camera (multicam) tại đầu phát.
 err	no sequence is open	Chưa có chuỗi dựng nào đang mở.
 err	no clips selected	Chưa chọn đoạn phim nào.
 err	no edit points selected	Chưa chọn điểm cắt nào.
