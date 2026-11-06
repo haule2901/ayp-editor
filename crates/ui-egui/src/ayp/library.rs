@@ -13,9 +13,10 @@ fn gcd(a: u32, b: u32) -> u32 {
     if b == 0 { a } else { gcd(b, a % b) }
 }
 
-fn run(app: &mut FilmcraftApp, ctx: &egui::Context, cmd: &str, params: &str) -> Result<(), String> {
+fn run(app: &mut FilmcraftApp, ctx: &egui::Context, cmd: &str, params: &str) -> Result<serde_json::Value, String> {
     let p = serde_json::from_str(params).map_err(|e| e.to_string())?;
-    crate::menus::invoke(app, ctx, cmd, p).map(|_| ())
+    let r = crate::menus::invoke(app, ctx, cmd, p);
+    r
 }
 
 pub(crate) fn click_item(app: &mut FilmcraftApp, ctx: &egui::Context, item: &Item) {
@@ -35,10 +36,17 @@ pub(crate) fn click_item(app: &mut FilmcraftApp, ctx: &egui::Context, item: &Ite
             } else {
                 item.params
             };
-            for (cmd, params) in std::iter::once((item.cmd, params)).chain(item.then.iter().copied()) {
-                if let Err(e) = run(app, ctx, cmd, params) {
-                    app.ui.status = format!("Chưa làm được: {}", vi::reason(&e));
-                    return;
+            for (i, (cmd, params)) in std::iter::once((item.cmd, params)).chain(item.then.iter().copied()).enumerate() {
+                match run(app, ctx, cmd, params) {
+                    Err(e) => {
+                        app.ui.status = format!("Chưa làm được: {}", vi::reason(&e));
+                        return;
+                    }
+                    // Xoá khoảng lặng / từ đệm that found nothing would otherwise look like a dead button.
+                    Ok(v) if i == 0 && v.get("removed").and_then(serde_json::Value::as_u64) == Some(0) => {
+                        app.ui.status = "Không tìm thấy chỗ nào để xoá".into();
+                    }
+                    Ok(_) => {}
                 }
             }
             if params != item.params {

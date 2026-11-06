@@ -216,6 +216,23 @@ fn remove_fillers_knows_vietnamese_hesitations() {
     assert_eq!(texts, ["thì", "em", "nghĩ"]);
 }
 
+/// A cleanup that finds nothing says so instead of looking like a dead button.
+#[test]
+fn a_cleanup_that_finds_nothing_says_so() {
+    let mut d = Driver::launch(true);
+    let v = d.exec("sequence.inspect", json!({}));
+    let clip = &v["result"]["video"][0]["items"][0];
+    let (item, from) = (clip["item"].clone(), clip["sourceIn"].as_i64().unwrap());
+    let half = 254_016_000_000_i64 / 2;
+    let words: Vec<Value> = (0..4).map(|i| json!({"text": format!("chữ{i}"), "start": from + i * half, "end": from + (i + 1) * half})).collect();
+    d.exec("transcript.set", json!({"item": item, "transcript": {"language": "vi", "speakers": [], "words": words}}));
+    d.click("ayp.tab.cut");
+    let before = d.undo_len();
+    d.click("ayp.item.transcript.removePauses");
+    assert_eq!(d.undo_len(), before);
+    assert_eq!(d.h.state().ui.status, "Không tìm thấy chỗ nào để xoá");
+}
+
 #[test]
 fn no_open_sequence_shows_a_hint() {
     let d = Driver::launch(false);
