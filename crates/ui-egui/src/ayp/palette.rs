@@ -93,7 +93,12 @@ fn candidates(app: &FilmcraftApp) -> Vec<Cand> {
     use super::toolbar::{BUTTONS, EXPORT};
     let mut out: Vec<Cand> = Vec::new();
     for item in TABS.iter().flat_map(|t| t.items) {
-        let enabled = if item.kind == Kind::Ai { Err("AI dùng lệnh này: hãy hỏi trong tab AI".to_string()) } else { state_of(app, item.cmd) };
+        let enabled = match item.kind {
+            Kind::Ai => Err("AI dùng lệnh này: hãy hỏi trong tab AI".to_string()),
+            // it only opens its tab's panel, which works whatever the command's state
+            Kind::Panel => Ok(()),
+            Kind::Run => state_of(app, item.cmd),
+        };
         out.push(Cand { id: item.key, run: Run::Item(item), labels: vec![item.label.into()], en: label_of(item.cmd), enabled, listed: true });
     }
     let tools: &'static [(&str, &str, &str, crate::icons::Icon)] = &BUTTONS;

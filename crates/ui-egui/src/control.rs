@@ -157,14 +157,9 @@ pub fn handle(app: &mut FilmcraftApp, ctx: &egui::Context, req: &ControlRequest)
                 Some("ai") => Some(crate::state::AypSideTab::Ai),
                 Some(o) => return err(format!("unknown side `{o}` (props | ai)")),
             };
-            if app.ui.workspace != "AYP" {
-                match crate::dock::find(&app.workspaces, "AYP") {
-                    Some(w) => app.set_workspace(&w),
-                    None => return err("no AYP workspace"),
-                }
-            }
-            if let Some(t) = tab {
-                app.ui.ayp_tab = t.to_string();
+            let t = tab.map_or_else(|| app.ui.ayp_tab.clone(), str::to_string);
+            if let Err(e) = crate::ayp::open_tab(app, &t) {
+                return err(e);
             }
             if let Some(sd) = side {
                 app.ui.ayp_side = sd;

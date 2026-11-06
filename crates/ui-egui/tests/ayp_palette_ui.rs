@@ -155,6 +155,20 @@ fn enter_on_nothing_does_nothing_and_a_disabled_hit_says_why() {
     assert!(d.h.state().ui.status.starts_with("Chưa làm được:"), "{}", d.h.state().ui.status);
 }
 
+/// A hit that points at an embedded panel (Tạo giọng đọc) opens the AYP tab holding it, from any workspace.
+#[test]
+fn a_panel_hit_opens_its_tab() {
+    let mut d = Driver::launch();
+    d.ok("ui.set", json!({"workspace": "Editing"}));
+    d.exec("ayp.palette.open", json!({}));
+    d.frames(3);
+    d.ok("ui.type", json!({"text": "giong doc"}));
+    d.ok("ui.key", json!({"key": "Enter"}));
+    assert!(!d.has("ayp.palette"), "status: {}", d.h.state().ui.status);
+    assert_eq!(d.h.state().ui.workspace, "AYP");
+    assert_eq!(d.h.state().ui.ayp_tab, "voice");
+}
+
 /// `AYP_PALETTE_PNG=/path.png cargo test --test ayp_palette_ui snapshot -- --ignored` writes a picture of the open finder.
 #[test]
 #[ignore]

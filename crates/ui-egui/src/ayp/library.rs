@@ -110,7 +110,13 @@ fn run_item(app: &mut FilmcraftApp, ctx: &egui::Context, item: &Item) {
         return;
     }
     match item.kind {
-        Kind::Panel => app.ui.status = "Chọn trong bảng bên dưới".into(),
+        Kind::Panel => {
+            // from Tìm lệnh… the tab may not be on show: open it, with its panel
+            if let Some(tab) = TABS.iter().find(|t| t.items.iter().any(|i| i.key == item.key)) {
+                let _ = super::open_tab(app, tab.id);
+            }
+            app.ui.status = "Chọn trong bảng bên dưới".into();
+        }
         Kind::Ai => {}
         Kind::Run => {
             // A reason left by an earlier failed click must not stand next to this click's result.
