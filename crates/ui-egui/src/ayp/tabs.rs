@@ -85,10 +85,12 @@ pub const TABS: &[Tab] = &[
         it("transcript.generate", TRANSCRIBE_VI, "Chép lời (tiếng Việt)", "transcript.generate"),
         c("transcript.removePauses", "Xoá khoảng lặng"),
         // The engine's default list is English only ("um", "uh"…): add the Vietnamese hesitation sounds.
-        // Words that also carry meaning (à, ừ, thì, kiểu…) are left to the editor.
+        // Words that also carry meaning (à, ừ, thì, kiểu…) are left to the editor. Trade-off: "ờ" / "ơ" are
+        // also a soft "yes" or a call ("ơ kìa") now and then; the ASR rarely writes them that way, and an
+        // editor who needs one back undoes the step.
         it(
             "transcript.removeFillers",
-            r#"{"fillers":["ờ","ơ","ờm","ừm","ưm","hừm","um","uh","umm","uhm","erm","er","ah","hmm","mm","mhm"]}"#,
+            r#"{"fillers":["ờ","ơ","ờm","ừm","ừmm","ùm","ưm","hừm","hm","um","uh","umm","uhm","erm","er","ah","hmm","mm","mhm"]}"#,
             "Xoá từ đệm",
             "transcript.removeFillers",
         ),

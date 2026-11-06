@@ -213,7 +213,7 @@ fn remove_fillers_knows_vietnamese_hesitations() {
     let clip = &v["result"]["video"][0]["items"][0];
     let (item, from) = (clip["item"].clone(), clip["sourceIn"].as_i64().unwrap());
     let half = 254_016_000_000_i64 / 2;
-    let words: Vec<Value> = ["thì", "ờ", "em", "ừm", "nghĩ"]
+    let words: Vec<Value> = ["thì", "ờ", "em", "ừm", "ùm", "nghĩ", "hm"]
         .iter()
         .enumerate()
         .map(|(i, w)| json!({"text": w, "start": from + i as i64 * half, "end": from + (i as i64 + 1) * half}))
