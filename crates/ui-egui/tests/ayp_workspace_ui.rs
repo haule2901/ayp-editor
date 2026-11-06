@@ -175,3 +175,50 @@ fn ayp_layout_changes_are_saved_once_after_settling() {
     let saved = ayp(&ws).expect("AYP layout saved");
     assert!(!saved.contains("AypSide") && !saved.contains("AypLibrary"), "{saved}");
 }
+
+fn saved_names(data: &Path) -> Vec<String> {
+    let v: Value = serde_json::from_slice(&std::fs::read(data.join("workspaces.json")).unwrap()).unwrap();
+    v["saved"].as_array().map(|a| a.iter().map(|s| s["name"].as_str().unwrap().to_string()).collect()).unwrap_or_default()
+}
+
+/// Let the AYP layout autosave settle (0.5 s without a change).
+fn settle(d: &mut Driver) {
+    for _ in 0..80 {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        d.frames(1);
+    }
+}
+
+/// The autosave re-reads workspaces.json first: what FilmCraft AYP saved meanwhile is kept.
+#[test]
+fn ayp_autosave_keeps_what_filmcraft_ayp_wrote_meanwhile() {
+    let data = tmp("merge");
+    std::fs::write(data.join("aypeditor.json"), r#"{"introduced":true,"workspace":"AYP"}"#).unwrap();
+    let mut d = Driver::launch(&data, true);
+    let assembly = serde_json::to_value(filmcraft_ui_egui::dock::workspace("Assembly")).unwrap();
+    std::fs::write(data.join("workspaces.json"), json!({"current": "Color", "saved": [{"name": "Assembly", "layout": assembly}]}).to_string()).unwrap();
+    d.harness.state_mut().ui.dock.close(PanelKind::AypSide);
+    settle(&mut d);
+    let mut names = saved_names(&data);
+    names.sort();
+    assert_eq!(names, ["AYP", "Assembly"]);
+    assert_eq!(current(&data).as_deref(), Some("Color"));
+}
+
+/// In AYP, Reset to Saved Layout drops the saved AYP layout and brings back the built-in one.
+#[test]
+fn ayp_reset_brings_back_the_built_in_layout() {
+    let data = tmp("reset");
+    std::fs::write(data.join("aypeditor.json"), r#"{"introduced":true,"workspace":"AYP"}"#).unwrap();
+    let mut changed = filmcraft_ui_egui::dock::workspace("AYP");
+    changed.close(PanelKind::AypSide);
+    let layout = serde_json::to_value(changed).unwrap();
+    std::fs::write(data.join("workspaces.json"), json!({"current": "Editing", "saved": [{"name": "AYP", "layout": layout}]}).to_string()).unwrap();
+    let mut d = Driver::launch(&data, true);
+    assert!(!d.harness.state().ui.dock.contains(PanelKind::AypSide), "the saved layout opened");
+    d.menu("window.workspace.reset");
+    assert!(d.harness.state().ui.dock.contains(PanelKind::AypSide), "the built-in layout is back");
+    settle(&mut d);
+    assert!(saved_names(&data).is_empty(), "{:?}", saved_names(&data));
+    assert_eq!(current(&data).as_deref(), Some("Editing"));
+}

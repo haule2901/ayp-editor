@@ -23,6 +23,15 @@ pub fn route(app: &mut FilmcraftApp, id: &str, params: &Value) -> Option<Result<
     let r = match ws {
         "reset" => {
             let n = app.ui.workspace.clone();
+            if app.ayp_default && n == "AYP" {
+                // AYP's layout is autosaved, so its "saved layout" is the current one: reset means the built-in
+                let mut next = app.workspaces.clone();
+                next.saved.retain(|s| s.name != "AYP");
+                if let Err(e) = app.set_workspaces(next) {
+                    return Some(Err(e));
+                }
+                app.ayp_saved = None;
+            }
             app.set_workspace(&n);
             Ok(json!({"workspace": n}))
         }

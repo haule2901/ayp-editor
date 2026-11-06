@@ -828,6 +828,10 @@ impl FilmcraftApp {
         }
         // marked saved even if the write fails, so an error is reported once per change
         self.ayp_saved = Some(now);
+        // FilmCraft AYP shares the file: merge into what is on disk now, not what was read at launch
+        if let Some(p) = self.workspaces_path().filter(|p| p.exists()) {
+            self.workspaces = dock::WorkspacePrefs::load(&p);
+        }
         if let Some(Err(e)) = panels::workspaces::route(self, "window.workspace.saveChanges", &serde_json::Value::Null) {
             self.ui.status = e;
         }
