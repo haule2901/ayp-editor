@@ -21,7 +21,7 @@
 //! faces, otherwise one installed system face, see `cjk.rs`); without one, switching to Chinese is
 //! refused the same way ([`chinese_font_available`]).
 
-mod catalog;
+pub(crate) mod catalog;
 
 use std::cell::Cell;
 use std::sync::{Arc, OnceLock};

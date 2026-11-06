@@ -1,0 +1,312 @@
+# Vietnamese catalog for the AYP panels. Columns (TAB-separated): context <TAB> source <TAB> translation
+# context empty = label (English command label -> Vietnamese); `syn` = search synonyms separated by |;
+# `err` = engine error fragment (matched case-insensitively) -> Vietnamese reason.
+# Every entry is written from the plain meaning of the English label in ordinary Vietnamese
+# video-editing vocabulary; no other product's translations were consulted or copied.
+	Project…	Dự án…
+	Demo Project	Dự án mẫu
+	Sequence…	Chuỗi dựng…
+	Sequence From Clip	Chuỗi dựng từ đoạn phim
+	Bin	Thư mục
+	Bin From Selection	Thư mục từ vùng chọn
+	Search Bin	Thư mục tìm kiếm
+	Offline File…	Tệp ngoại tuyến…
+	Adjustment Layer…	Lớp điều chỉnh…
+	Bars and Tone…	Sọc màu và âm chuẩn…
+	Black Video…	Video đen…
+	Color Matte…	Nền màu…
+	Universal Counting Leader…	Đếm ngược…
+	Transparent Video…	Video trong suốt…
+	Demo Footage	Cảnh quay mẫu
+	EDL…	EDL…
+	Selection as FilmCraft Project…	Vùng chọn thành dự án FilmCraft…
+	Avid Log Exchange…	Avid Log Exchange…
+	OpenTimelineIO…	OpenTimelineIO…
+	Final Cut Pro XML…	Final Cut Pro XML…
+	FCPXML…	FCPXML…
+	AAF…	AAF…
+	OMF…	OMF…
+	Open Project…	Mở dự án…
+	Close	Đóng
+	Close Project	Đóng dự án
+	Close All Projects	Đóng mọi dự án
+	Close All Other Projects	Đóng các dự án khác
+	Save	Lưu
+	Save As…	Lưu thành…
+	Save a Copy…	Lưu bản sao…
+	Save as Template…	Lưu làm mẫu…
+	Save All	Lưu tất cả
+	Revert	Hoàn nguyên
+	Recover Unsaved Changes…	Khôi phục thay đổi chưa lưu…
+	Media…	Phương tiện…
+	Undo	Hoàn tác
+	Redo	Làm lại
+	Cut	Cắt bỏ
+	Copy	Sao chép
+	Paste	Dán
+	Paste Insert	Dán chèn
+	Paste Attributes…	Dán thuộc tính…
+	Remove Attributes…	Xoá thuộc tính…
+	Clear	Xoá
+	Ripple Delete	Xoá và kéo liền
+	Ripple Delete Head Frame	Xoá khung hình đầu và kéo liền
+	Select All	Chọn tất cả
+	Select All Matching	Chọn mọi mục khớp
+	Deselect All	Bỏ chọn tất cả
+	Find…	Tìm…
+	Find Next	Tìm tiếp
+	Duplicate	Nhân đôi
+	Select Label Group	Chọn nhóm nhãn màu
+	Violet	Tím tía
+	Iris	Tím hoa diên vĩ
+	Caribbean	Xanh biển
+	Lavender	Tím oải hương
+	Cerulean	Xanh lam nhạt
+	Forest	Xanh rừng
+	Rose	Hồng
+	Mango	Vàng xoài
+	Purple	Tím
+	Blue	Xanh dương
+	Teal	Xanh mòng két
+	Magenta	Hồng tím
+	Tan	Nâu nhạt
+	Green	Xanh lá
+	Brown	Nâu
+	Yellow	Vàng
+	Remove Unused	Xoá mục không dùng
+	Consolidate Duplicates	Gộp mục trùng
+	Edit Original	Sửa bản gốc
+	Rename…	Đổi tên…
+	Make Subclip…	Tạo đoạn con…
+	Edit Subclip…	Sửa đoạn con…
+	Edit Offline…	Sửa ngoại tuyến…
+	Source Settings…	Cài đặt nguồn…
+	Audio Channels…	Kênh âm thanh…
+	Interpret Footage…	Diễn giải cảnh quay…
+	Timecode…	Mã thời gian…
+	Frame Hold Options…	Tuỳ chọn dừng hình…
+	Add Frame Hold	Dừng hình
+	Insert Frame Hold Segment	Chèn đoạn dừng hình
+	Field Options…	Tuỳ chọn trường ảnh…
+	Frame Sampling	Lấy mẫu khung hình
+	Frame Blending	Hoà trộn khung hình
+	Optical Flow	Luồng quang học
+	Scale to Frame Size	Co theo cỡ khung hình
+	Fit to frame	Vừa khung hình
+	Fill frame	Phủ kín khung hình
+	Audio Gain…	Độ lớn âm thanh…
+	Breakout to Mono	Tách thành đơn kênh
+	Extract Audio	Tách âm thanh
+	Speed/Duration…	Tốc độ/Thời lượng…
+	Scene Edit Detection…	Phát hiện điểm đổi cảnh…
+	Enable	Bật
+	Link	Liên kết
+	Group	Nhóm
+	Ungroup	Bỏ nhóm
+	Nest…	Lồng vào…
+	Sequence Settings…	Cài đặt chuỗi dựng…
+	Render Effects In to Out	Kết xuất hiệu ứng từ Vào đến Ra
+	Render In to Out	Kết xuất từ Vào đến Ra
+	Render Selection	Kết xuất vùng chọn
+	Render Audio	Kết xuất âm thanh
+	Delete Render Files	Xoá tệp kết xuất
+	Delete Render Files In to Out	Xoá tệp kết xuất từ Vào đến Ra
+	Match Frame	Tìm khung hình gốc
+	Reverse Match Frame	Tìm ngược khung hình gốc
+	Add Edit	Tách
+	Add Edit to All Tracks	Tách mọi track
+	Trim Edit	Tỉa điểm cắt
+	Apply Video Transition	Thêm chuyển tiếp hình
+	Apply Audio Transition	Thêm chuyển tiếp tiếng
+	Apply Default Transitions to Selection	Thêm chuyển tiếp mặc định cho vùng chọn
+	Lift	Nhấc ra
+	Extract	Cắt rút
+	Close Gap	Lấp khoảng trống
+	Next in Sequence	Tiếp theo trong chuỗi dựng
+	Previous in Sequence	Trước đó trong chuỗi dựng
+	Next in Track	Tiếp theo trong track
+	Previous in Track	Trước đó trong track
+	Snap in Timeline	Hít dòng thời gian
+	Linked Selection	Chọn theo liên kết
+	Selection Follows Playhead	Vùng chọn theo đầu phát
+	Show Through Edits	Hiện các điểm tách
+	Normalize Mix Track…	Cân bằng track trộn…
+	Make Subsequence	Tạo chuỗi con
+	Transcribe Sequence…	Chép lời chuỗi dựng…
+	Simplify Sequence…	Rút gọn chuỗi dựng…
+	Add Tracks…	Thêm track…
+	Delete Tracks…	Xoá track…
+	Color Management…	Quản lý màu…
+	Add Audio Submix Track	Thêm track trộn âm
+	Mark In	Đánh dấu Vào
+	Mark Out	Đánh dấu Ra
+	Mark Clip	Đánh dấu đoạn phim
+	Mark Selection	Đánh dấu vùng chọn
+	Video In	Vào hình
+	Video Out	Ra hình
+	Audio In	Vào tiếng
+	Audio Out	Ra tiếng
+	Go to In	Đến điểm Vào
+	Go to Out	Đến điểm Ra
+	Clear In	Xoá điểm Vào
+	Clear Out	Xoá điểm Ra
+	Clear In and Out	Xoá điểm Vào và Ra
+	Add Marker	Thêm dấu mốc
+	Add Range Marker	Thêm dấu mốc khoảng
+	Add Range Marker to In and Out	Thêm dấu mốc khoảng từ Vào đến Ra
+	Go to Next Marker	Đến dấu mốc kế
+	Go to Previous Marker	Đến dấu mốc trước
+	Clear Selected Marker	Xoá dấu mốc đang chọn
+	Export Markers as CSV…	Xuất dấu mốc ra CSV…
+	Clear Markers	Xoá mọi dấu mốc
+	Show All Marker Colors	Hiện mọi màu dấu mốc
+	Add Chapter Marker…	Thêm dấu mốc chương…
+	Add Flash Cue Marker…	Thêm dấu mốc báo hiệu…
+	Ripple Sequence Markers	Dấu mốc chuỗi dựng đi theo khi kéo liền
+	Copy Paste Includes Sequence Markers	Sao chép dán kèm dấu mốc chuỗi dựng
+	Insert	Chèn
+	Overwrite	Ghi đè
+	From Source Monitor	Từ màn hình nguồn
+	From Source Monitor, Match Frame	Từ màn hình nguồn, khớp khung hình
+	From Bin	Từ thư mục
+	Restore Captions from Source Clip	Khôi phục phụ đề từ đoạn phim gốc
+	Update Metadata…	Cập nhật siêu dữ liệu…
+	Generate Audio Waveform	Tạo sóng âm
+	Automate to Sequence…	Tự động đưa vào chuỗi dựng…
+	Duyệt góp ý (AYP)…	Duyệt góp ý (AYP)…
+	Góp ý thành marker (AYP)	Góp ý thành marker (AYP)
+	Add New Caption Track…	Thêm track phụ đề mới…
+	Add Caption at Playhead	Thêm phụ đề tại đầu phát
+	Go to Next Caption Segment	Đến phụ đề kế
+	Go to Previous Caption Segment	Đến phụ đề trước
+	Show All Caption Tracks	Hiện mọi track phụ đề
+	Show Active Caption Tracks Only	Chỉ hiện track phụ đề đang dùng
+	Hide All Caption Tracks	Ẩn mọi track phụ đề
+	Captions…	Phụ đề…
+	Synchronize…	Đồng bộ…
+	Merge Clips…	Ghép đoạn phim…
+	Create Multi-Camera Source Sequence…	Tạo chuỗi nguồn nhiều máy quay…
+	Flatten	Làm phẳng
+	Text	Văn bản
+	Vertical Text	Văn bản dọc
+	Rectangle	Hình chữ nhật
+	Ellipse	Hình elip
+	Polygon	Đa giác
+	From file…	Từ tệp…
+	Left	Trái
+	Center Horizontally	Giữa theo chiều ngang
+	Right	Phải
+	Top	Trên
+	Center Vertically	Giữa theo chiều dọc
+	Bottom	Dưới
+	Distribute Vertically	Dàn đều theo chiều dọc
+	Distribute Space Vertically	Chia đều khoảng cách dọc
+	Distribute Horizontally	Dàn đều theo chiều ngang
+	Distribute Space Horizontally	Chia đều khoảng cách ngang
+	Bring to Front	Đưa lên trên cùng
+	Bring Forward	Đưa lên một lớp
+	Send Backward	Đưa xuống một lớp
+	Send to Back	Đưa xuống dưới cùng
+	Select Next Graphic	Chọn đồ hoạ kế
+	Select Previous Graphic	Chọn đồ hoạ trước
+	Select Next Layer	Chọn lớp kế
+	Select Previous Layer	Chọn lớp trước
+	Reset All Parameters	Đặt lại mọi thông số
+	Reset Duration	Đặt lại thời lượng
+	Export As Motion Graphics Template…	Xuất thành mẫu đồ hoạ động…
+	Motion Graphics Template…	Mẫu đồ hoạ động…
+	Install Motion Graphics Template…	Cài mẫu đồ hoạ động…
+	Upgrade Caption to Graphic	Nâng phụ đề thành đồ hoạ
+	Upgrade to Source Graphic	Nâng thành đồ hoạ nguồn
+	Replace Fonts in Projects…	Thay phông chữ trong dự án…
+	Link Media…	Liên kết phương tiện…
+	Make Offline…	Chuyển sang ngoại tuyến…
+	Import from Media Browser	Nhập từ trình duyệt phương tiện
+	Import…	Nhập…
+	Import Image Sequence…	Nhập chuỗi ảnh…
+	Create Proxies…	Tạo bản proxy…
+	Attach Proxies…	Gắn bản proxy…
+	Detach Proxies	Gỡ bản proxy
+	Reconnect Full Resolution Media…	Nối lại bản gốc độ phân giải đầy đủ…
+	Toggle Proxies	Bật/tắt bản proxy
+	File…	Tệp…
+	Selection…	Vùng chọn…
+	General…	Chung…
+	Scratch Disks…	Ổ đĩa tạm…
+	Ingest Settings…	Cài đặt nạp phương tiện…
+	Project Manager…	Quản lý dự án…
+	Transcribe…	Chép lời…
+	Delete Transcript	Xoá bản chép lời
+	Remove Pauses	Xoá khoảng lặng
+	Remove Filler Words	Xoá từ đệm
+	Create Captions from Transcript…	Tạo phụ đề từ bản chép lời…
+	Phụ đề tiếng Việt (AYP)…	Phụ đề tiếng Việt (AYP)…
+	Phụ đề theo cụm của biên tập viên (AYP)	Phụ đề theo cụm của biên tập viên (AYP)
+	Enable Remix	Bật phối lại
+	Remix Properties…	Thuộc tính phối lại…
+	Revert Remix	Hoàn nguyên phối lại
+	Apply Effect	Thêm hiệu ứng
+	Remove Effect	Xoá hiệu ứng
+	Reset Effect	Đặt lại hiệu ứng
+	Quick Export	Xuất nhanh
+syn	Remove Pauses	khoảng lặng|lặng|im lặng|cắt khoảng trống
+syn	Remove Filler Words	từ đệm|ờ à|từ thừa
+syn	Phụ đề tiếng Việt (AYP)…	phụ đề|sub|chữ chạy|caption
+syn	Speed/Duration…	tốc độ|tua nhanh|chậm|đảo ngược
+syn	Quick Export	xuất|render|xuất video
+syn	Add Edit	cắt|tách|chia
+syn	Add Frame Hold	dừng hình|đóng băng|freeze
+syn	Undo	hoàn tác|quay lại
+syn	Redo	làm lại
+syn	Ripple Delete	xoá|xoá liền|cắt bỏ
+syn	Extract Audio	tách tiếng|lấy tiếng|âm thanh
+syn	Audio Gain…	âm lượng|to nhỏ|volume
+syn	Add Marker	dấu mốc|marker|đánh dấu
+syn	Apply Video Transition	chuyển tiếp|transition|chuyển cảnh
+syn	Apply Effect	hiệu ứng|effect
+syn	Transcribe…	chép lời|gỡ băng|transcript
+syn	Create Captions from Transcript…	phụ đề|caption|sub
+syn	Add Caption at Playhead	phụ đề|thêm sub|caption
+syn	Text	chữ|văn bản|tiêu đề|title
+syn	Duplicate	nhân đôi|sao chép|copy
+syn	Scale to Frame Size	vừa khung|phóng to|co giãn
+syn	Import…	nhập|thêm phương tiện|import
+syn	Group	nhóm|gom
+syn	Link	liên kết|gắn tiếng
+syn	Nest…	lồng|gộp lớp
+syn	Close Gap	khoảng trống|lấp chỗ trống
+syn	Mark In	điểm vào|đánh dấu
+syn	Mark Out	điểm ra|đánh dấu
+syn	Duyệt góp ý (AYP)…	duyệt|góp ý|review
+err	select clips first	Chưa làm được: hãy chọn đoạn phim trên dòng thời gian trước.
+err	no sequence is open	Chưa có chuỗi dựng nào đang mở.
+err	no clips selected	Chưa chọn đoạn phim nào.
+err	no edit points selected	Chưa chọn điểm cắt nào.
+err	the project has not been saved yet	Dự án chưa được lưu lần nào.
+err	select an item in the Project panel	Hãy chọn một mục trong bảng Dự án.
+err	select a clip	Hãy chọn một đoạn phim.
+err	select a clip with audio	Hãy chọn đoạn phim có âm thanh.
+err	select a clip in the Project panel	Hãy chọn một đoạn phim trong bảng Dự án.
+err	select clips in the Project panel	Hãy chọn các đoạn phim trong bảng Dự án.
+err	select a video clip in the timeline	Hãy chọn một đoạn hình trên dòng thời gian.
+err	select clips or edit points	Hãy chọn đoạn phim hoặc điểm cắt.
+err	select clips or project items	Hãy chọn đoạn phim hoặc mục trong dự án.
+err	select at least two clips	Hãy chọn ít nhất hai đoạn phim.
+err	nothing selected	Chưa chọn gì cả.
+err	nothing to undo	Không còn gì để hoàn tác.
+err	nothing to redo	Không còn gì để làm lại.
+err	nothing to save	Không có gì để lưu.
+err	no clip at the playhead	Không có đoạn phim nào tại đầu phát.
+err	no keyframe at that time	Không có khung hình chính tại thời điểm đó.
+err	no such clip	Không tìm thấy đoạn phim này.
+err	no such effect	Không tìm thấy hiệu ứng này.
+err	no source clip	Chưa có đoạn phim nguồn.
+err	the sequence has no transcript	Chuỗi dựng chưa có bản chép lời. Hãy chép lời trước.
+err	the sequence has no caption track	Chuỗi dựng chưa có track phụ đề.
+err	there are no captions	Chưa có phụ đề nào.
+err	the sequence has no audio track	Chuỗi dựng chưa có track âm thanh.
+err	the sequence has no audio clips	Chuỗi dựng chưa có đoạn âm thanh.
+err	the project is empty	Dự án đang trống.
+err	the project has no sequences	Dự án chưa có chuỗi dựng nào.
+err	open a clip in the Source monitor	Hãy mở một đoạn phim ở màn hình nguồn hoặc chọn một đoạn.
+err	cancelled	Đã huỷ.
