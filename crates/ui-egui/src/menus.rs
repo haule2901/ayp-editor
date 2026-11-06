@@ -118,6 +118,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     uic!("window.ayp.simple", "AYP Interface", ["Window"], None),
     uic!("ayp.side.props", "Properties Tab", [], None),
     uic!("ayp.side.ai", "AI Tab", [], None),
+    uic!("ayp.palette.open", "Find Command…", ["Window"], Some("Cmd+Shift+P")),
     uic!("window.workspace.reset", "Reset to Saved Layout", ["Window", "Workspaces"], Some("Alt+Shift+0")),
     uic!("window.workspace.saveChanges", "Save Changes to this Workspace", ["Window", "Workspaces"], None),
     uic!("window.workspace.saveAs", "Save as New Workspace…", ["Window", "Workspaces"], None),
@@ -260,6 +261,10 @@ pub fn invoke(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, mut params:
     if let Some(rest) = id.strip_prefix("window.panel.") {
         let p = PanelKind::from_name(rest).ok_or_else(|| format!("unknown panel `{rest}`"))?;
         app.show_panel(p);
+        return Ok(Value::Null);
+    }
+    if id == "ayp.palette.open" {
+        app.ui.ayp_palette = Some(String::new());
         return Ok(Value::Null);
     }
     if let Some(tab) = match id {

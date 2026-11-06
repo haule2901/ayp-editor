@@ -4,3 +4,4 @@ pub mod tabs;
 pub mod library;
 pub mod side;
 pub mod toolbar;
+pub mod palette;

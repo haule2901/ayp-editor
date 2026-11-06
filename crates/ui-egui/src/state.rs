@@ -475,6 +475,9 @@ pub struct UiState {
     /// Open tab of the AYP right panel.
     #[serde(default)]
     pub ayp_side: AypSideTab,
+    /// The "Tìm lệnh…" finder: None = closed, Some(text typed). Never saved.
+    #[serde(skip)]
+    pub ayp_palette: Option<String>,
     /// The header bar (Home, Import, Edit, Export, workspaces). An app that embeds FilmCraft can hide it.
     #[serde(default = "shown")]
     pub show_header: bool,
@@ -1005,6 +1008,7 @@ impl Default for UiState {
             show_status_bar: true,
             ayp_tab: default_ayp_tab(),
             ayp_side: AypSideTab::default(),
+            ayp_palette: None,
             dark: true,
             show_scopes: false,
             status: String::new(),
