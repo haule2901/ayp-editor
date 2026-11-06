@@ -91,6 +91,7 @@ fn save_new(app: &mut FilmcraftApp, name: &str) -> Result<Value, String> {
     let name = new_name(app, name)?;
     save(app, &name)?;
     app.ui.workspace = name.clone();
+    app.remember_ayp_workspace();
     Ok(json!({"saved": name, "workspace": name}))
 }
 
@@ -112,6 +113,7 @@ fn rename(app: &mut FilmcraftApp, from: &str, to: &str) -> Result<Value, String>
     app.set_workspaces(next)?;
     if app.ui.workspace == from {
         app.ui.workspace = to.clone();
+        app.remember_ayp_workspace();
     }
     Ok(json!({"renamed": from, "to": to}))
 }

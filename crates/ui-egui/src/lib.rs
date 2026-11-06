@@ -765,14 +765,12 @@ impl FilmcraftApp {
         if prev.is_none() && !self.workspace_restored {
             // reopen the workspace in use when the app last closed
             self.workspace_restored = true;
-            let marker = self.ayp_marker_path();
-            let introduced = marker.as_ref().is_some_and(|m| m.exists());
-            if let Some(w) = dock::initial_workspace(&self.workspaces, self.ayp_default, introduced) {
+            if self.ayp_default {
+                // AYPEditor's own last workspace (FilmCraft AYP owns `current` in the shared workspaces.json);
+                // AYP on the first launch and when the marker names none.
+                let last = self.ayp_marker_path().and_then(|m| std::fs::read(m).ok()).and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok());
+                let w = last.as_ref().and_then(|v| v["workspace"].as_str()).and_then(|n| dock::find(&self.workspaces, n)).unwrap_or_else(|| "AYP".into());
                 self.set_workspace(&w);
-                if let Some(m) = marker {
-                    // ponytail: a failed write just means AYP opens again next launch
-                    let _ = std::fs::write(m, r#"{"introduced":true}"#);
-                }
             } else if let Some(w) = dock::find(&self.workspaces, &self.workspaces.current) {
                 self.set_workspace(&w);
             }
@@ -780,10 +778,20 @@ impl FilmcraftApp {
         self.applied_prefs = Some(p);
     }
 
-    /// `aypeditor.json`: written once the AYP workspace has been opened by default. Only inside the
-    /// session's own data directory.
+    /// `aypeditor.json` (`{"introduced":true,"workspace":<name>}`): AYPEditor's own last workspace. Only
+    /// inside the session's own data directory.
     fn ayp_marker_path(&self) -> Option<std::path::PathBuf> {
         Some(self.session.prefs_path.as_ref()?.parent()?.join("aypeditor.json"))
+    }
+
+    /// AYPEditor: remember the workspace in use in `aypeditor.json`, for the next launch.
+    pub(crate) fn remember_ayp_workspace(&self) {
+        if self.ayp_default
+            && let Some(m) = self.ayp_marker_path()
+        {
+            // ponytail: a failed write just means the previous workspace opens next launch
+            let _ = std::fs::write(m, serde_json::json!({"introduced": true, "workspace": self.ui.workspace}).to_string());
+        }
     }
 
     /// AYPEditor: keep the AYP workspace's layout as the user left it. A change is written once it
@@ -878,7 +886,11 @@ impl FilmcraftApp {
     }
 
     /// Replace the saved workspaces and write them to the data directory.
-    pub fn set_workspaces(&mut self, w: dock::WorkspacePrefs) -> Result<(), String> {
+    pub fn set_workspaces(&mut self, mut w: dock::WorkspacePrefs) -> Result<(), String> {
+        if self.ayp_default {
+            // the shared `current` is FilmCraft AYP's; AYPEditor keeps its own in aypeditor.json
+            w.current = self.workspaces.current.clone();
+        }
         self.workspaces = w;
         match self.workspaces_path() {
             Some(p) => self.workspaces.save(&p).map_err(|e| format!("saving workspaces: {e}")),
@@ -893,7 +905,9 @@ impl FilmcraftApp {
         self.ui.floating = layout.floating;
         self.pending_panel_raise = None;
         self.ui.keys.maximized = None;
-        if self.workspaces.current != name {
+        if self.ayp_default {
+            self.remember_ayp_workspace();
+        } else if self.workspaces.current != name {
             let mut next = self.workspaces.clone();
             next.current = name.to_string();
             if let Err(e) = self.set_workspaces(next) {

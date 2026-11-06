@@ -316,12 +316,6 @@ fn migrate_legacy_effects(root: &mut DockNode) {
     }
 }
 
-/// The workspace AYPEditor opens with: "AYP" on its first launch only (`already_introduced` is the
-/// marker file), else `None` and the workspace in use last time stays.
-pub fn initial_workspace(_prefs: &WorkspacePrefs, ayp_default: bool, already_introduced: bool) -> Option<String> {
-    (ayp_default && !already_introduced).then(|| "AYP".to_string())
-}
-
 /// The default layout of a named workspace.
 pub fn workspace(name: &str) -> DockNode {
     use PanelKind::*;
@@ -921,14 +915,6 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn initial_workspace_only_on_the_first_ayp_launch() {
-        let p = WorkspacePrefs::default();
-        assert_eq!(initial_workspace(&p, true, false).as_deref(), Some("AYP"));
-        assert_eq!(initial_workspace(&p, true, true), None);
-        assert_eq!(initial_workspace(&p, false, false), None);
-        assert_eq!(initial_workspace(&p, false, true), None);
-    }
 
     #[test]
     fn split_first_never_panics_on_tiny_areas() {
