@@ -1,0 +1,8 @@
+asset:        aypeditor-ayp-workspace.png
+title:        AYPEditor: the AYP (CapCut-style) workspace
+author:       FilmCraft contributors (screenshot)
+source:       original work (screenshot of AYPEditor captured with its ui.screenshot control command)
+license:      MIT OR Apache-2.0
+license-file:
+added:        2026-11-07 by Claude (agent) for haule2901
+notes:        AYP workspace on the built-in demo project (synthetic generator footage, no external media); one Vietnamese caption added to show diacritics. Downscaled to 1495 px. All UI icons are drawn in code. Contains no CapCut or Adobe artwork.
