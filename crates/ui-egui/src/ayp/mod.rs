@@ -6,6 +6,17 @@ pub mod side;
 pub mod toolbar;
 pub mod palette;
 
+/// Run a command the way an AYP button does: clear the reason an earlier click left, parse `params`,
+/// invoke; a failure is said on the status line as "Chưa làm được: <lý do>".
+pub(crate) fn run(app: &mut crate::FilmcraftApp, ctx: &egui::Context, cmd: &str, params: &str) -> Result<serde_json::Value, String> {
+    app.ui.status.clear();
+    let r = serde_json::from_str(params).map_err(|e| e.to_string()).and_then(|p| crate::menus::invoke(app, ctx, cmd, p));
+    if let Err(e) = &r {
+        app.ui.status = format!("Chưa làm được: {}", vi::reason(e));
+    }
+    r
+}
+
 /// Show the AYP workspace (switching to it from any other) with `tab` open.
 pub(crate) fn open_tab(app: &mut crate::FilmcraftApp, tab: &str) -> Result<(), String> {
     if app.ui.workspace != "AYP" {

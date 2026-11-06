@@ -191,17 +191,12 @@ fn run(app: &mut FilmcraftApp, ctx: &egui::Context, h: &Hit) {
     app.ui.ayp_palette = None;
     match h.run {
         Run::Item(item) => super::library::click_item(app, ctx, item),
-        Run::Command(id) => run_cmd(app, ctx, id, "{}"),
-        Run::Tool(id, params) => run_cmd(app, ctx, id, params),
-    }
-}
-
-fn run_cmd(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, params: &str) {
-    let p = serde_json::from_str(params).unwrap_or_default();
-    // a reason left by an earlier failed run must not stand next to this run's result
-    app.ui.status.clear();
-    if let Err(e) = crate::menus::invoke(app, ctx, id, p) {
-        app.ui.status = format!("Chưa làm được: {}", vi::reason(&e));
+        Run::Command(id) => {
+            let _ = super::run(app, ctx, id, "{}");
+        }
+        Run::Tool(id, params) => {
+            let _ = super::run(app, ctx, id, params);
+        }
     }
 }
 

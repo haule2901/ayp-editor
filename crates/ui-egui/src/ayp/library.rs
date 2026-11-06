@@ -13,16 +13,15 @@ fn gcd(a: u32, b: u32) -> u32 {
     if b == 0 { a } else { gcd(b, a % b) }
 }
 
-fn run(app: &mut FilmcraftApp, ctx: &egui::Context, cmd: &str, params: &str) -> Result<serde_json::Value, String> {
-    let p = serde_json::from_str(params).map_err(|e| e.to_string())?;
-    let r = crate::menus::invoke(app, ctx, cmd, p);
+/// One command of a click, through [`super::run`].
+fn step(app: &mut FilmcraftApp, ctx: &egui::Context, cmd: &str, params: &str) -> Result<serde_json::Value, String> {
+    let r = super::run(app, ctx, cmd, params);
     // Chuẩn hoá âm lượng on a clip nobody has tagged yet: treat it as speech (Dialogue), as a talking clip is.
     if cmd == "essentialSound.autoMatch"
         && r.as_ref().is_err_and(|e| e.contains("no clips with an audio type"))
-        && crate::menus::invoke(app, ctx, "essentialSound.setType", serde_json::json!({"type": "dialogue"})).is_ok()
+        && super::run(app, ctx, "essentialSound.setType", r#"{"type":"dialogue"}"#).is_ok()
     {
-        let p = serde_json::from_str(params).map_err(|e| e.to_string())?;
-        return crate::menus::invoke(app, ctx, cmd, p);
+        return super::run(app, ctx, cmd, params);
     }
     r
 }
@@ -119,8 +118,6 @@ fn run_item(app: &mut FilmcraftApp, ctx: &egui::Context, item: &Item) {
         }
         Kind::Ai => {}
         Kind::Run => {
-            // A reason left by an earlier failed click must not stand next to this click's result.
-            app.ui.status.clear();
             // Lift / Extract act on the words picked in the embedded Text panel, as its own buttons do.
             let picked;
             let params = if matches!(item.cmd, "transcript.lift" | "transcript.extract") {
@@ -137,16 +134,14 @@ fn run_item(app: &mut FilmcraftApp, ctx: &egui::Context, item: &Item) {
             let first = super::one_step(app, item.label, |app| {
                 let mut first = None;
                 for (cmd, params) in std::iter::once((item.cmd, params)).chain(item.then.iter().copied()) {
-                    let v = run(app, ctx, cmd, params)?;
+                    let v = step(app, ctx, cmd, params)?;
                     first.get_or_insert(v);
                 }
                 Ok(first)
             });
             match first {
-                Err(e) => {
-                    app.ui.status = format!("Chưa làm được: {}", vi::reason(&e));
-                    return;
-                }
+                // the failing step has said why
+                Err(_) => return,
                 // Xoá khoảng lặng / từ đệm that found nothing would otherwise look like a dead button.
                 Ok(Some(v)) if v.get("removed").and_then(serde_json::Value::as_u64) == Some(0) => {
                     app.ui.status = "Không tìm thấy chỗ nào để xoá".into();
@@ -180,11 +175,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let find = ui.put(Rect::from_min_size(egui::pos2(head.right() - find_w, head.top()), vec2(find_w, head.height())), egui::Button::new("Tìm lệnh…")).on_hover_text("Tìm và chạy mọi lệnh (⌘⇧P)");
     app.auto.add_response("ayp.find", &find, "Tìm lệnh…");
     if find.clicked() {
-        // Task 8 adds the palette; before that the command is unknown and the error is dropped.
-        let before = app.ui.status.clone();
-        if crate::menus::invoke(app, &ctx, "ayp.palette.open", serde_json::json!({})).is_err() {
-            app.ui.status = before;
-        }
+        let _ = super::run(app, &ctx, "ayp.palette.open", "{}");
     }
     y = head.bottom() + 4.0;
 

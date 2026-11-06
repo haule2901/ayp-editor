@@ -43,11 +43,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
             let resp = ui.put(b, egui::Button::new("Tìm lệnh…")).on_hover_text("Tìm và chạy mọi lệnh (⌘⇧P)");
             app.auto.add_response("ayp.side.openPalette", &resp, "Tìm lệnh…");
             if resp.clicked() {
-                // Task 8 adds the palette; until then the command is unknown and the error is dropped.
-                let before = app.ui.status.clone();
-                if crate::menus::invoke(app, &ctx, "ayp.palette.open", serde_json::json!({})).is_err() {
-                    app.ui.status = before;
-                }
+                let _ = super::run(app, &ctx, "ayp.palette.open", "{}");
             }
         }
     }

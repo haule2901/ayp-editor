@@ -1,5 +1,4 @@
 //! The strip above the Timeline: big, labelled buttons for the everyday edits.
-use super::vi;
 use crate::FilmcraftApp;
 use crate::icons::Icon;
 use egui::{Rect, Sense, vec2};
@@ -20,14 +19,6 @@ pub(crate) const BUTTONS: [(&str, &str, &str, Icon); 10] = [
 pub(crate) const EXPORT: (&str, &str, &str, Icon) = ("Xuất", "file.exportMedia", "{}", Icon::Export);
 const H: f32 = 28.0;
 
-fn run(app: &mut FilmcraftApp, ctx: &egui::Context, cmd: &str, params: &str) {
-    let p = serde_json::from_str(params).unwrap_or_default();
-    app.ui.status.clear();
-    if let Err(e) = crate::menus::invoke(app, ctx, cmd, p) {
-        app.ui.status = format!("Chưa làm được: {}", vi::reason(&e));
-    }
-}
-
 fn button(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, r: Rect, b: &(&str, &str, &str, Icon), on: bool, accent: bool, label: bool) {
     let t = app.tokens;
     let resp = ui.interact(r, egui::Id::new(("ayp.tool", b.1)), Sense::click()).on_hover_text(b.0);
@@ -46,7 +37,7 @@ fn button(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, r: Rec
         ui.painter().text(egui::pos2(r.left() + 29.0, r.center().y), egui::Align2::LEFT_CENTER, b.0, egui::FontId::proportional(12.5), ink);
     }
     if resp.clicked() {
-        run(app, ctx, b.1, b.2);
+        let _ = super::run(app, ctx, b.1, b.2);
     }
 }
 
