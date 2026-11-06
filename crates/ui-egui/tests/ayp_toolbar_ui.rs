@@ -15,6 +15,10 @@ struct Driver {
 
 impl Driver {
     fn launch(demo: bool) -> Self {
+        Self::launch_w(demo, 1600.0)
+    }
+
+    fn launch_w(demo: bool, width: f32) -> Self {
         let mut session = Session::default();
         if demo {
             session.execute("file.openDemoProject", json!({})).expect("demo project");
@@ -27,7 +31,7 @@ impl Driver {
         let (tx, rx) = channel();
         let mut app = FilmcraftApp::new(session).with_control(rx);
         app.ayp_default = true;
-        let h = Harness::builder().with_size(egui::vec2(1600.0, 980.0)).with_max_steps(10_000).build_eframe(move |_cc| app);
+        let h = Harness::builder().with_size(egui::vec2(width, 980.0)).with_max_steps(10_000).build_eframe(move |_cc| app);
         let mut d = Driver { h, tx };
         d.frames(4);
         d
@@ -150,6 +154,25 @@ fn failing_button_says_why_and_no_sequence_is_safe() {
     e.frames(3);
     assert!(e.has("ayp.tool.edit.undo"));
     assert!(e.h.state().ui_error.is_none());
+}
+
+#[test]
+fn narrow_window_never_covers_export() {
+    let d = Driver::launch_w(true, 900.0);
+    let rect = |c: &str| {
+        let id = format!("ayp.tool.{c}");
+        d.h.state().auto.query(&id).into_iter().find(|e| e.id == id).map(|e| e.rect)
+    };
+    let x = rect("file.exportMedia").expect("Xuất");
+    let mut kept = 0;
+    for c in ORDER.iter().filter(|c| **c != "file.exportMedia") {
+        if let Some(r) = rect(c) {
+            kept += 1;
+            // rect = [left, top, right, bottom]
+            assert!(r[2] <= x[0], "{c} {r:?} overlaps Xuất {x:?}");
+        }
+    }
+    assert_eq!(kept, 10, "all ten buttons should still fit icon-only at 900 px");
 }
 
 /// `AYP_TOOLBAR_PNG=/path.png cargo test --test ayp_toolbar_ui snapshot -- --ignored`

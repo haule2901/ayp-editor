@@ -27,7 +27,7 @@ fn run(app: &mut FilmcraftApp, ctx: &egui::Context, cmd: &str, params: &str) {
     }
 }
 
-fn button(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, r: Rect, b: &(&str, &str, &str, Icon), on: bool, accent: bool) {
+fn button(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, r: Rect, b: &(&str, &str, &str, Icon), on: bool, accent: bool, label: bool) {
     let t = app.tokens;
     let resp = ui.interact(r, egui::Id::new(("ayp.tool", b.1)), Sense::click()).on_hover_text(b.0);
     app.auto.add_response(&format!("ayp.tool.{}", b.1), &resp, b.0);
@@ -41,7 +41,9 @@ fn button(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, r: Rec
     let ink = if accent || on { egui::Color32::WHITE } else if live { t.text } else { t.text_dim };
     let icon = if accent || on { egui::Color32::WHITE } else if live { t.icon } else { t.text_dim };
     crate::icons::paint(ui.painter(), Rect::from_center_size(egui::pos2(r.left() + 16.0, r.center().y), vec2(16.0, 16.0)), b.3, icon);
-    ui.painter().text(egui::pos2(r.left() + 29.0, r.center().y), egui::Align2::LEFT_CENTER, b.0, egui::FontId::proportional(12.5), ink);
+    if label {
+        ui.painter().text(egui::pos2(r.left() + 29.0, r.center().y), egui::Align2::LEFT_CENTER, b.0, egui::FontId::proportional(12.5), ink);
+    }
     if resp.clicked() {
         run(app, ctx, b.1, b.2);
     }
@@ -51,16 +53,35 @@ fn width(ui: &egui::Ui, label: &str) -> f32 {
     ui.painter().layout_no_wrap(label.into(), egui::FontId::proportional(12.5), egui::Color32::WHITE).size().x + 29.0 + 10.0
 }
 
+/// Indices into BUTTONS that lose their label first when the row is too wide (lowest priority first).
+const SHRINK: [usize; 5] = [9, 8, 7, 5, 4];
+const ICON_W: f32 = 32.0;
+
 pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let ctx = ui.ctx().clone();
     let y = rect.center().y - H / 2.0;
-    let mut x = rect.left() + 6.0;
-    for b in &BUTTONS {
-        let w = width(ui, b.0);
-        let on = b.1 == "sequence.snap" && app.session.state.snapping;
-        button(app, ui, &ctx, Rect::from_min_size(egui::pos2(x, y), vec2(w, H)), b, on, false);
-        x += w + 4.0;
+    let ex_w = width(ui, EXPORT.0) + 8.0;
+    let ex_left = rect.right() - 6.0 - ex_w;
+    let limit = ex_left - 4.0;
+    let mut icon_only = [false; 10];
+    let widths = |io: &[bool; 10]| -> Vec<f32> { BUTTONS.iter().enumerate().map(|(i, b)| if io[i] { ICON_W } else { width(ui, b.0) }).collect() };
+    let total = |w: &[f32]| rect.left() + 6.0 + w.iter().map(|x| x + 4.0).sum::<f32>() - 4.0;
+    let mut w = widths(&icon_only);
+    for i in SHRINK {
+        if total(&w) <= limit {
+            break;
+        }
+        icon_only[i] = true;
+        w = widths(&icon_only);
     }
-    let w = width(ui, EXPORT.0) + 8.0;
-    button(app, ui, &ctx, Rect::from_min_size(egui::pos2(rect.right() - 6.0 - w, y), vec2(w, H)), &EXPORT, false, true);
+    let mut x = rect.left() + 6.0;
+    for (i, b) in BUTTONS.iter().enumerate() {
+        if x + w[i] > limit {
+            break; // ponytail: buttons that cannot fit are dropped, not scrolled; the command palette still reaches them
+        }
+        let on = b.1 == "sequence.snap" && app.session.state.snapping;
+        button(app, ui, &ctx, Rect::from_min_size(egui::pos2(x, y), vec2(w[i], H)), b, on, false, !icon_only[i]);
+        x += w[i] + 4.0;
+    }
+    button(app, ui, &ctx, Rect::from_min_size(egui::pos2(ex_left, y), vec2(ex_w, H)), &EXPORT, false, true, true);
 }
