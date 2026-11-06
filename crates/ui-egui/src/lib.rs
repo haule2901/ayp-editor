@@ -387,6 +387,8 @@ pub struct FilmcraftApp {
     pub ayp_default: bool,
     /// The AYP layout as last saved (or loaded); a different dock means a change to save.
     ayp_saved: Option<dock::Layout>,
+    /// The layout seen last frame and when it last changed (for the autosave debounce).
+    ayp_seen: Option<(dock::Layout, f64)>,
     /// Window ▸ Workspaces: saved layouts ([`dock::WORKSPACES_FILE`] in the data directory).
     pub workspaces: dock::WorkspacePrefs,
     /// Workspace names and the current one, as last handed to the native menu.
@@ -609,6 +611,7 @@ impl FilmcraftApp {
             workspace_restored: false,
             ayp_default: false,
             ayp_saved: None,
+            ayp_seen: None,
             workspaces,
             menu_workspaces: Default::default(),
         }
@@ -777,29 +780,42 @@ impl FilmcraftApp {
         self.applied_prefs = Some(p);
     }
 
-    /// `aypeditor.json`: written once the AYP workspace has been opened by default.
+    /// `aypeditor.json`: written once the AYP workspace has been opened by default. Only inside the
+    /// session's own data directory.
     fn ayp_marker_path(&self) -> Option<std::path::PathBuf> {
-        let dir = self.session.prefs_path.as_ref().and_then(|p| p.parent()).map(|d| d.to_path_buf()).or_else(filmcraft_engine::autosave::default_data_dir)?;
-        Some(dir.join("aypeditor.json"))
+        Some(self.session.prefs_path.as_ref()?.parent()?.join("aypeditor.json"))
     }
 
-    /// AYPEditor: keep the AYP workspace's layout as the user left it, writing only on a change.
-    fn autosave_ayp_layout(&mut self) {
+    /// AYPEditor: keep the AYP workspace's layout as the user left it. A change is written once it
+    /// has been still for half a second and no pointer button is down (a drag changes it every frame).
+    fn autosave_ayp_layout(&mut self, ctx: &egui::Context) {
+        const SETTLE: f64 = 0.5;
         if !self.ayp_default || self.ui.workspace != "AYP" {
             self.ayp_saved = None;
+            self.ayp_seen = None;
             return;
         }
+        let now_t = ctx.input(|i| i.time);
         let now = dock::Layout { root: self.ui.dock.clone(), floating: self.ui.floating.clone() };
+        if self.ayp_saved.is_none() {
+            // first frame in AYP: the layout just loaded is the saved one
+            self.ayp_saved = Some(now.clone());
+        }
+        if self.ayp_seen.as_ref().map(|(l, _)| l) != Some(&now) {
+            self.ayp_seen = Some((now.clone(), now_t));
+        }
         if self.ayp_saved.as_ref() == Some(&now) {
             return;
         }
-        // first frame in AYP: the layout just loaded is the saved one
-        let first = self.ayp_saved.is_none();
+        let since = now_t - self.ayp_seen.as_ref().map_or(now_t, |(_, t)| *t);
+        if since < SETTLE || ctx.input(|i| i.pointer.any_down()) {
+            ctx.request_repaint_after(std::time::Duration::from_secs_f64((SETTLE - since).max(0.05)));
+            return;
+        }
+        // marked saved even if the write fails, so an error is reported once per change
         self.ayp_saved = Some(now);
-        if !first {
-            if let Err(e) = panels::workspaces::route(self, "window.workspace.saveChanges", &serde_json::Value::Null).unwrap_or(Ok(serde_json::Value::Null)) {
-                self.ui.status = e;
-            }
+        if let Some(Err(e)) = panels::workspaces::route(self, "window.workspace.saveChanges", &serde_json::Value::Null) {
+            self.ui.status = e;
         }
     }
 
@@ -1795,7 +1811,7 @@ impl FilmcraftApp {
         }
         self.sync_pool();
         self.apply_prefs(&ctx);
-        self.autosave_ayp_layout();
+        self.autosave_ayp_layout(&ctx);
         #[cfg(not(target_arch = "wasm32"))]
         self.tick_media_refresh(&ctx);
         for ev in self.session.drain_events() {

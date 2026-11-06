@@ -106,16 +106,30 @@ fn advanced_and_simple_switch() {
 }
 
 #[test]
-fn ayp_layout_change_is_saved_once() {
+fn ayp_layout_changes_are_saved_once_after_settling() {
     let data = tmp("autosave");
     let mut d = Driver::launch(&data, true);
     let ws = data.join("workspaces.json");
-    let before = std::fs::read(&ws).ok();
+    let ayp = |ws: &Path| -> Option<String> {
+        let v: Value = serde_json::from_slice(&std::fs::read(ws).ok()?).ok()?;
+        v["saved"].as_array()?.iter().find(|s| s["name"] == "AYP").map(|s| s["layout"].to_string())
+    };
     d.frames(5);
-    assert_eq!(std::fs::read(&ws).ok(), before, "no change, no write");
+    assert_eq!(ayp(&ws), None, "no change, no layout write");
+    // several changes in a row: nothing is written while the layout keeps moving
     d.harness.state_mut().ui.dock.close(PanelKind::AypSide);
-    d.frames(3);
-    let saved: Value = serde_json::from_slice(&std::fs::read(&ws).unwrap()).unwrap();
-    let ayp = saved["saved"].as_array().unwrap().iter().find(|s| s["name"] == "AYP").expect("AYP layout saved");
-    assert!(!ayp["layout"].to_string().contains("AypSide"));
+    d.frames(2);
+    d.harness.state_mut().ui.dock.close(PanelKind::AypLibrary);
+    d.frames(2);
+    assert_eq!(ayp(&ws), None, "still unsettled");
+    // settled: one write holding the final layout
+    for _ in 0..200 {
+        if ayp(&ws).is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        d.frames(1);
+    }
+    let saved = ayp(&ws).expect("AYP layout saved");
+    assert!(!saved.contains("AypSide") && !saved.contains("AypLibrary"), "{saved}");
 }

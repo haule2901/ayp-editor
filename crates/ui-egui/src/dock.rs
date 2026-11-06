@@ -918,6 +918,9 @@ pub fn placeholder(ui: &mut egui::Ui, rect: Rect, t: &Tokens, text: &str) {
 
 #[cfg(test)]
 mod tests {
+
+    use super::*;
+
     #[test]
     fn initial_workspace_only_on_the_first_ayp_launch() {
         let p = WorkspacePrefs::default();
@@ -926,8 +929,6 @@ mod tests {
         assert_eq!(initial_workspace(&p, false, false), None);
         assert_eq!(initial_workspace(&p, false, true), None);
     }
-
-    use super::*;
 
     #[test]
     fn split_first_never_panics_on_tiny_areas() {
