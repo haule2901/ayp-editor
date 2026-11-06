@@ -909,6 +909,20 @@ impl FilmcraftApp {
         if p == PanelKind::Timeline && !self.ui.floating.iter().any(|group| group.panels.contains(&p)) {
             self.ui.dock.restore_timeline();
         }
+        // AYP layout: a panel it embeds is shown by opening the AYP tab that holds it, never added as a
+        // classic tab (selecting a narration used to put Text to Speech beside Program for good).
+        if self.ui.dock.contains(PanelKind::AypLibrary) && !self.ui.dock.contains(p) && !self.ui.floating.iter().any(|group| group.panels.contains(&p)) {
+            if let Some(tab) = crate::ayp::tabs::TABS.iter().find(|t| t.embed == Some(p)) {
+                self.ui.ayp_tab = tab.id.into();
+                self.ui.focused = p;
+                return;
+            }
+            if p == PanelKind::Properties && self.ui.dock.contains(PanelKind::AypSide) {
+                self.ui.ayp_side = crate::state::AypSideTab::Props;
+                self.ui.focused = p;
+                return;
+            }
+        }
         if !self.ui.dock.contains(p) && !self.ui.floating.iter().any(|group| group.panels.contains(&p)) {
             let near = match p {
                 // a side panel beside Properties (or Essential Sound), never over the Program monitor

@@ -179,6 +179,24 @@ fn lift_and_extract_use_the_words_picked_in_the_transcript() {
     }
 }
 
+/// A command that brings up a panel the AYP layout embeds (Text to Speech when a narration is selected,
+/// the Text panel…) opens the AYP tab holding it instead of adding a classic tab to the layout.
+#[test]
+fn embedded_panels_open_their_ayp_tab_instead_of_a_classic_tab() {
+    use filmcraft_ui_egui::dock::PanelKind;
+    let mut d = Driver::launch(true);
+    for (panel, tab) in [(PanelKind::TextToSpeech, "voice"), (PanelKind::Text, "captions"), (PanelKind::Project, "media"), (PanelKind::Effects, "effects")] {
+        d.h.state_mut().show_panel(panel);
+        d.frames(2);
+        assert!(!d.h.state().ui.dock.contains(panel), "{panel:?} was added to the AYP dock");
+        assert_eq!(d.h.state().ui.ayp_tab, tab, "{panel:?}");
+    }
+    d.h.state_mut().ui.ayp_side = filmcraft_ui_egui::state::AypSideTab::Ai;
+    d.h.state_mut().show_panel(PanelKind::Properties);
+    assert!(!d.h.state().ui.dock.contains(PanelKind::Properties));
+    assert_eq!(d.h.state().ui.ayp_side, filmcraft_ui_egui::state::AypSideTab::Props);
+}
+
 #[test]
 fn no_open_sequence_shows_a_hint() {
     let d = Driver::launch(false);
