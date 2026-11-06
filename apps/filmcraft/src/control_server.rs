@@ -22,18 +22,17 @@ pub const MAX_LINE: usize = 4 * 1024 * 1024;
 /// Connections served at once; further ones get an error line and are closed.
 pub const MAX_CONNECTIONS: usize = 16;
 
-pub fn start(port: u16, ctx: egui::Context) -> Receiver<ControlRequest> {
+/// Bind the control port. On failure the caller keeps running without a control channel and
+/// tells the user (the error text is Vietnamese, ready for a toast).
+pub fn start(port: u16, ctx: egui::Context) -> Result<Receiver<ControlRequest>, String> {
     let (tx, rx) = channel::<ControlRequest>();
-    let listener = match TcpListener::bind(("127.0.0.1", port)) {
-        Ok(l) => l,
-        Err(e) => {
-            eprintln!("filmcraft: control server failed to bind 127.0.0.1:{port}: {e}");
-            return rx;
-        }
-    };
+    let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|e| {
+        eprintln!("filmcraft: control server failed to bind 127.0.0.1:{port}: {e}");
+        format!("Cổng điều khiển {port} đang bận — AI/MCP chưa nối được.")
+    })?;
     eprintln!("filmcraft: control server listening on 127.0.0.1:{port}");
     std::thread::spawn(move || accept_loop(listener, tx, ctx));
-    rx
+    Ok(rx)
 }
 
 fn accept_loop(listener: TcpListener, tx: Sender<ControlRequest>, ctx: egui::Context) {
@@ -168,6 +167,14 @@ fn serve_lines<R: Read, W: Write>(read: R, mut out: W, mut handle: impl FnMut(St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn busy_port_is_an_error() {
+        let held = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = held.local_addr().unwrap().port();
+        let err = start(port, egui::Context::default()).unwrap_err();
+        assert!(err.contains("đang bận"), "{err}");
+    }
 
     fn run(input: &[u8]) -> (Vec<Value>, Vec<String>) {
         let mut out = Vec::new();

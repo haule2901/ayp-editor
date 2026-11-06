@@ -339,8 +339,11 @@ fn app_creator(launch: Launch, graphics: graphics::GraphicsStart, created: Arc<A
             app.ui.show_menu_bar = false;
         }
         if let Some(port) = control_port {
-            let rx = control_server::start(port, cc.egui_ctx.clone());
-            app = if control_input_only { app.with_control_input_only(rx) } else { app.with_control(rx) };
+            match control_server::start(port, cc.egui_ctx.clone()) {
+                Ok(rx) => app = if control_input_only { app.with_control_input_only(rx) } else { app.with_control(rx) },
+                // Busy port: keep running without AI/MCP, but say so (ui.status clears after 8 s).
+                Err(msg) => app.toast = Some((msg, cc.egui_ctx.input(|i| i.time))),
+            }
         }
         Ok(Box::new(app))
     })
