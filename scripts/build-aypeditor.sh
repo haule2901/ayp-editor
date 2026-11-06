@@ -2,9 +2,13 @@
 # Build AYPEditor.app (release) into $AYP_STAGE (default ~/Library/Caches/aypeditor); --install copies it to ~/Applications.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-export PATH="/opt/homebrew/opt/rustup/bin:$PATH"
+# cargo from PATH; Homebrew's rustup only when none is on it
+command -v cargo >/dev/null || export PATH="/opt/homebrew/opt/rustup/bin:$PATH"
 export CARGO_INCREMENTAL=0
-export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/Volumes/Extreme SSD/aypeditor-target}"
+# The repo's target/ unless CARGO_TARGET_DIR is set. To build on an external drive (the app is still
+# assembled and signed on the internal disk, see below):
+#   CARGO_TARGET_DIR="/Volumes/<drive>/aypeditor-target" scripts/build-aypeditor.sh --install
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
 
 cargo build --release -p filmcraft --features whisper,vieneu-voices
 
