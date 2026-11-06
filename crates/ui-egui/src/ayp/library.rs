@@ -177,7 +177,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     };
     let find_w = 92.0;
     ui.put(Rect::from_min_size(head.min, vec2(head.width() - find_w - 4.0, head.height())), egui::Label::new(egui::RichText::new(title).strong().color(t.text)).truncate());
-    let find = ui.put(Rect::from_min_size(egui::pos2(head.right() - find_w, head.top()), vec2(find_w, head.height())), egui::Button::new("Tìm lệnh…"));
+    let find = ui.put(Rect::from_min_size(egui::pos2(head.right() - find_w, head.top()), vec2(find_w, head.height())), egui::Button::new("Tìm lệnh…")).on_hover_text("Tìm và chạy mọi lệnh (⌘⇧P)");
     app.auto.add_response("ayp.find", &find, "Tìm lệnh…");
     if find.clicked() {
         // Task 8 adds the palette; before that the command is unknown and the error is dropped.
@@ -219,10 +219,11 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
 
     let tab = TABS.iter().find(|t| t.id == app.ui.ayp_tab).unwrap_or(&TABS[0]);
 
-    // One-click buttons: up to 45% of the column when a panel follows, then they scroll.
+    // One-click buttons: up to 45% of the column when a panel follows (60% for a long list), then they scroll.
     let left = (rect.bottom() - y).max(0.0);
     let want = tab.items.len() as f32 * (ROW_H + 4.0) + 4.0;
-    let list_h = if tab.embed.is_some() { want.min(left * 0.45) } else { left };
+    let cap = if tab.items.len() > 8 { 0.6 } else { 0.45 };
+    let list_h = if tab.embed.is_some() { want.min(left * cap) } else { left };
     let mut list = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(egui::pos2(rect.left() + 6.0, y), vec2(w - 12.0, list_h))));
     egui::ScrollArea::vertical().id_salt("ayp.items").auto_shrink([false, false]).show(&mut list, |ui| {
         for item in tab.items {
@@ -231,7 +232,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
             let button = egui::Button::new(egui::RichText::new(item.label).color(ink)).min_size(vec2(ui.available_width(), ROW_H));
             let resp = ui.add_enabled(item.kind != Kind::Ai, button);
             let resp = match item.kind {
-                Kind::Ai => resp.on_disabled_hover_text("AI dùng lệnh này — hỏi trong tab AI hoặc Tìm lệnh…"),
+                Kind::Ai => resp.on_disabled_hover_text("Sẽ có ở bản sau (AI)"),
                 _ => resp.on_hover_text(item.cmd),
             };
             // Scrolled-out buttons are not registered: a click on their rect would land on the toolbar below.

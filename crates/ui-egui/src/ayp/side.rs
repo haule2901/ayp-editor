@@ -40,7 +40,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 below = r.bottom();
             }
             let b = Rect::from_min_size(egui::pos2(body.left() + 6.0, below + 6.0), vec2(110.0, 28.0));
-            let resp = ui.put(b, egui::Button::new("Tìm lệnh…"));
+            let resp = ui.put(b, egui::Button::new("Tìm lệnh…")).on_hover_text("Tìm và chạy mọi lệnh (⌘⇧P)");
             app.auto.add_response("ayp.side.openPalette", &resp, "Tìm lệnh…");
             if resp.clicked() {
                 // Task 8 adds the palette; until then the command is unknown and the error is dropped.

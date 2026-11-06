@@ -92,9 +92,15 @@ fn candidates(app: &FilmcraftApp) -> Vec<Cand> {
     use super::tabs::Kind;
     use super::toolbar::{BUTTONS, EXPORT};
     let mut out: Vec<Cand> = Vec::new();
+    // ids of tab items left out because another tab has the same command and params
+    let mut twins: Vec<&str> = Vec::new();
     for item in TABS.iter().flat_map(|t| t.items) {
+        if out.iter().any(|c| matches!(c.run, Run::Item(i) if i.cmd == item.cmd && i.params == item.params)) {
+            twins.push(item.key);
+            continue;
+        }
         let enabled = match item.kind {
-            Kind::Ai => Err("AI dùng lệnh này: hãy hỏi trong tab AI".to_string()),
+            Kind::Ai => Err("Sẽ có ở bản sau (AI)".to_string()),
             // it only opens its tab's panel, which works whatever the command's state
             Kind::Panel => Ok(()),
             Kind::Run => state_of(app, item.cmd),
@@ -110,7 +116,7 @@ fn candidates(app: &FilmcraftApp) -> Vec<Cand> {
             out.push(Cand { id: b.1, run: Run::Tool(b.1, b.2), labels: vec![b.0.into()], en: label_of(b.1), enabled: state_of(app, b.1), listed: true });
         }
     }
-    let covered: Vec<&str> = out.iter().map(|c| c.id).collect();
+    let covered: Vec<&str> = out.iter().map(|c| c.id).chain(twins).collect();
     let engine: Vec<_> = filmcraft_engine::command_specs().iter().filter(|c| !covered.contains(&c.id)).map(|c| (c.id, c.label, (c.enabled)(&app.session), true)).collect();
     let ui: Vec<_> = crate::menus::UI_COMMANDS.iter().filter(|c| !covered.contains(&c.id)).map(|c| (c.id, c.label, Ok(()), !c.menu.is_empty())).collect();
     for (id, en, enabled, in_menu) in engine.into_iter().chain(ui) {
@@ -363,6 +369,18 @@ mod tests {
         assert_eq!(app.session.history.undo.len(), before, "not run in the click frame");
         super::super::library::run_pending(&mut app, &ctx);
         assert_eq!(app.session.history.undo.len(), before + 1, "{}", app.ui.status);
+    }
+    #[test]
+    fn the_same_command_and_params_are_listed_once() {
+        let app = FilmcraftApp::new(filmcraft_engine::Session::default());
+        let n = search(&app, "chep loi", 10).iter().filter(|h| h.label_vi == "Chép lời (tiếng Việt)").count();
+        assert_eq!(n, 1);
+    }
+    #[test]
+    fn ai_hits_say_they_come_later() {
+        let app = FilmcraftApp::new(filmcraft_engine::Session::default());
+        let h = search(&app, "chia cum phu de", 3).into_iter().find(|h| h.id == "transcript.captionsFromChunks").expect("listed");
+        assert_eq!(h.enabled, Err("Sẽ có ở bản sau (AI)".to_string()));
     }
     #[test]
     fn unrelated_words_find_nothing() {

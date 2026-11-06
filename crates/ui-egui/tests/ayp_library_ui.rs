@@ -155,6 +155,16 @@ fn scrolled_out_buttons_are_not_registered_over_the_toolbar() {
     assert!(inside(r), "{r:?}");
 }
 
+/// Hiệu ứng holds 13 buttons: speed / reverse, the most used, is on show without scrolling.
+#[test]
+fn speed_is_on_show_in_the_effects_tab() {
+    let mut d = Driver::launch(true);
+    d.click("ayp.tab.effects");
+    assert!(d.has("ayp.item.clip.speedDuration"));
+    let n = d.h.state().auto.query("ayp.item.").len();
+    assert!(n >= 7, "{n} buttons on show");
+}
+
 /// Xoá chữ chọn acts on the words picked in the transcript, like the Text panel's own Lift / Extract.
 #[test]
 fn lift_and_extract_use_the_words_picked_in_the_transcript() {

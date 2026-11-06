@@ -857,7 +857,7 @@ class Check:
             if p is None:
                 raise Fail("Tìm lệnh… did not open")
             return "PASS", "Tìm lệnh… opens over every command"
-        self.run("Tìm lệnh… (⌘K)", "Đầu cột trái", "click ayp.find", palette)
+        self.run("Tìm lệnh… (⌘⇧P)", "Đầu cột trái", "click ayp.find", palette)
 
         def ai_sees():
             cmds = app.call("engine.commands")["result"]

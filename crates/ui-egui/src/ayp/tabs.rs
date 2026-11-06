@@ -12,7 +12,7 @@ pub enum Kind {
     Run,
     /// Invoke nothing: focus the tab's `embed` panel and show a hint (the user must pick something there).
     Panel,
-    /// Greyed out: "AI dùng lệnh này — hỏi trong tab AI hoặc Tìm lệnh…". Plan 2 enables it.
+    /// Greyed out: "Sẽ có ở bản sau (AI)". Plan 2 enables it.
     Ai,
 }
 
@@ -105,13 +105,13 @@ pub const TABS: &[Tab] = &[
     ]},
     Tab { id: "effects", icon: Icon::Fx, label: "Hiệu ứng", embed: Some(PanelKind::Effects), items: &[
         it("effects.apply", r#"{"effect":"skin_smooth"}"#, "Làm mịn da", "effects.apply.skin_smooth"),
+        c("clip.speedDuration", "Tốc độ / đảo ngược…"),
         it("effects.apply", r#"{"effect":"gaussian_blur"}"#, "Làm mờ", "effects.apply.gaussian_blur"),
         it("effects.apply", r#"{"effect":"warp_stabilizer"}"#, "Chống rung", "effects.apply.warp_stabilizer"),
         it("effects.apply", r#"{"effect":"auto_reframe"}"#, "Tự khung hình 9:16", "effects.apply.auto_reframe"),
         it("effects.apply", r#"{"effect":"ultra_key"}"#, "Xoá phông xanh", "effects.apply.ultra_key"),
         it("effects.apply", r#"{"effect":"horizontal_flip"}"#, "Lật ngang", "effects.apply.horizontal_flip"),
         it("effects.apply", r#"{"effect":"crop"}"#, "Cắt khung", "effects.apply.crop"),
-        c("clip.speedDuration", "Tốc độ / đảo ngược…"),
         c("clip.frameHold", "Dừng hình"),
         it("masks.add", r#"{"effect":"opacity","shape":"ellipse"}"#, "Tạo mặt nạ", "masks.add"),
         c("masks.track", "Mặt nạ bám theo vật"),

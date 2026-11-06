@@ -75,7 +75,7 @@ starts from the same state (history undone back, clip selected, playhead at 20 s
 | 59 | Xuất (thanh công cụ) | Thanh công cụ | `click ayp.tool.file.exportMedia` | **PASS** | opens Export mode |
 | 60 | Nhân đôi clip (edit.copy + edit.paste) | Tìm lệnh… | `engine.execute edit.copy / edit.paste` | **PASS(cmd)** | +1 history step(s); V1 now 2 clips |
 | 61 | Xuất nhanh MP4 (export.quick) | Tìm lệnh… | `engine.execute export.quick {path, 8 Mbps, inOut}` | **PASS(cmd)** | In/Out 3 s at 8 Mbps → 3.05 s, 2.4 MB (ffprobe) |
-| 62 | Tìm lệnh… (⌘K) | Đầu cột trái | `click ayp.find` | **PASS** | Tìm lệnh… opens over every command |
+| 62 | Tìm lệnh… (⌘⇧P) | Đầu cột trái | `click ayp.find` | **PASS** | Tìm lệnh… opens over every command |
 | 63 | AI nhìn thấy thao tác tay (command.list) | AI / MCP | `engine.commands + ui.ayp.tabs` | **PASS** | 709 commands; every AYP button's command is in engine.commands (same session the user edits) |
 
 ## Classic panels added to the AYP layout
