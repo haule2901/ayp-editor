@@ -117,6 +117,19 @@ fn typing_without_marks_then_enter_runs_the_top_command() {
 }
 
 #[test]
+fn a_command_that_works_clears_an_old_reason() {
+    let mut d = Driver::launch();
+    let first = d.v1_items()[0].clone();
+    d.exec("playhead.set", json!({"time": first["start"].as_i64().unwrap() + first["duration"].as_i64().unwrap() / 2}));
+    d.h.state_mut().ui.status = "Chưa làm được: lần trước".into();
+    d.exec("ayp.palette.open", json!({}));
+    d.frames(3);
+    d.ok("ui.type", json!({"text": "tach"}));
+    d.ok("ui.key", json!({"key": "Enter"}));
+    assert_eq!(d.h.state().ui.status, "");
+}
+
+#[test]
 fn typing_does_not_trigger_editor_shortcuts() {
     let mut d = Driver::launch();
     d.exec("edit.deselectAll", json!({}));
