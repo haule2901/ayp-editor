@@ -27,7 +27,44 @@ fn run(app: &mut FilmcraftApp, ctx: &egui::Context, cmd: &str, params: &str) -> 
     r
 }
 
+/// The first empty, unlocked audio track of the open sequence; a new one at the bottom when none is empty.
+fn free_audio_track(app: &mut FilmcraftApp) -> Result<u64, String> {
+    let empty = |app: &FilmcraftApp| {
+        app.session.active_sequence().and_then(|q| q.audio_tracks.iter().find(|t| t.items.is_empty() && !t.locked).map(|t| t.id.0))
+    };
+    if app.session.active_sequence().is_none() {
+        return Err("no sequence is open".into());
+    }
+    if let Some(t) = empty(app) {
+        return Ok(t);
+    }
+    app.session.execute("sequence.addTracks", serde_json::json!({"video": 0, "audio": 1, "audioAfter": "last"})).map_err(|e| e.to_string())?;
+    empty(app).ok_or_else(|| "could not add an audio track".into())
+}
+
+/// Ghi âm lời: the Timeline's own record toggle (it rolls playback and the countdown), on an empty audio
+/// track, so the take never overwrites the clip's sound on A1.
+fn voiceover(app: &mut FilmcraftApp, start: bool) -> Result<(), String> {
+    let recording = app.session.voiceover.recording();
+    if start == recording {
+        return Err(if start { "a voice-over is already recording" } else { "no voice-over is recording" }.into());
+    }
+    let track = if start { Some(free_audio_track(app)?) } else { None };
+    crate::panels::voiceover::toggle(app, track)?;
+    if start {
+        app.ui.status = "Đang ghi âm lời… bấm Dừng ghi âm để dừng".into();
+    }
+    Ok(())
+}
+
 pub(crate) fn click_item(app: &mut FilmcraftApp, ctx: &egui::Context, item: &Item) {
+    if item.kind == Kind::Run && matches!(item.cmd, "audio.voiceover.start" | "audio.voiceover.stop") {
+        app.ui.status.clear();
+        if let Err(e) = voiceover(app, item.cmd == "audio.voiceover.start") {
+            app.ui.status = format!("Chưa làm được: {}", vi::reason(&e));
+        }
+        return;
+    }
     match item.kind {
         Kind::Panel => app.ui.status = "Chọn trong bảng bên dưới".into(),
         Kind::Ai => {}

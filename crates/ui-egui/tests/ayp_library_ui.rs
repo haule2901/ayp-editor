@@ -274,6 +274,27 @@ fn a_working_click_clears_the_previous_reason() {
     assert_eq!(d.h.state().ui.status, "");
 }
 
+/// Ghi âm lời records on an empty audio track (a new one when none is empty), never over the clip's own
+/// sound on A1, and through the Timeline's record toggle (playback rolls). Headless sessions use the
+/// synthetic input, so no microphone is touched.
+#[test]
+fn voiceover_records_on_an_empty_audio_track() {
+    let mut d = Driver::launch(true);
+    let q = d.exec("sequence.inspect", json!({}))["result"].clone();
+    let busy: Vec<u64> = q["audio"].as_array().unwrap().iter().filter(|t| !t["items"].as_array().unwrap().is_empty()).map(|t| t["id"].as_u64().unwrap()).collect();
+    assert!(!busy.is_empty());
+    d.click("ayp.tab.media");
+    d.click("ayp.item.audio.voiceover.start");
+    let track = d.h.state().session.voiceover.rec.as_ref().map(|r| r.track.0).unwrap_or_else(|| panic!("not recording: {}", d.h.state().ui.status));
+    assert!(!busy.contains(&track), "recording on busy track {track}");
+    let q = d.exec("sequence.inspect", json!({}))["result"].clone();
+    let t = q["audio"].as_array().unwrap().iter().find(|t| t["id"].as_u64() == Some(track)).expect("the record track");
+    assert!(t["items"].as_array().unwrap().is_empty());
+    d.click("ayp.item.audio.voiceover.stop");
+    d.frames(3);
+    assert!(!d.h.state().session.voiceover.recording(), "{}", d.h.state().ui.status);
+}
+
 #[test]
 fn no_open_sequence_shows_a_hint() {
     let d = Driver::launch(false);
