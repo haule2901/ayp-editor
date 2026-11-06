@@ -205,7 +205,11 @@ fn remove_fillers_knows_vietnamese_hesitations() {
     let clip = &v["result"]["video"][0]["items"][0];
     let (item, from) = (clip["item"].clone(), clip["sourceIn"].as_i64().unwrap());
     let half = 254_016_000_000_i64 / 2;
-    let words: Vec<Value> = ["thì", "ờ", "em", "ừm", "nghĩ"].iter().enumerate().map(|(i, w)| json!({"text": w, "start": from + i as i64 * half, "end": from + (i as i64 + 1) * half})).collect();
+    let words: Vec<Value> = ["thì", "ờ", "em", "ừm", "nghĩ"]
+        .iter()
+        .enumerate()
+        .map(|(i, w)| json!({"text": w, "start": from + i as i64 * half, "end": from + (i as i64 + 1) * half}))
+        .collect();
     d.exec("transcript.set", json!({"item": item, "transcript": {"language": "vi", "speakers": [], "words": words}}));
     d.click("ayp.tab.cut");
     let before = d.undo_len();
@@ -244,7 +248,7 @@ fn auto_match_tags_an_untagged_clip_as_dialogue() {
     let before = d.undo_len();
     d.click("ayp.item.essentialSound.autoMatch");
     assert!(!d.h.state().ui.status.starts_with("Chưa làm được"), "{}", d.h.state().ui.status);
-    assert!(d.undo_len() >= before + 1);
+    assert!(d.undo_len() > before);
     let es = d.exec("essentialSound.inspect", json!({"clips": [a]}));
     assert!(es.to_string().contains("ialogue"), "{es}");
 }
