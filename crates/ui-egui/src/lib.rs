@@ -385,6 +385,8 @@ pub struct FilmcraftApp {
     workspace_restored: bool,
     /// AYPEditor: open the "AYP" workspace on the first launch and autosave its layout.
     pub ayp_default: bool,
+    /// The control port that was busy at launch (no control channel is attached): the AYP AI tab says so.
+    pub control_busy_port: Option<u16>,
     /// AYP: a transcription clicked last frame, run this frame once its warning is painted.
     pub(crate) ayp_pending: Option<&'static ayp::tabs::Item>,
     /// When the last AYP transcription finished (clicks queued while it ran are dropped).
@@ -614,6 +616,7 @@ impl FilmcraftApp {
             applied_ui_scale: None,
             workspace_restored: false,
             ayp_default: false,
+            control_busy_port: None,
             ayp_pending: None,
             ayp_transcribed: None,
             ayp_saved: None,

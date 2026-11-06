@@ -107,6 +107,18 @@ fn switching_to_ai() {
     assert_eq!(d.h.state().ui.ayp_side, AypSideTab::Props);
 }
 
+/// The control port was taken by another app at launch: the AI tab says so for as long as the app runs.
+#[test]
+fn ai_tab_says_when_the_control_port_is_busy() {
+    let mut d = Driver::launch(true);
+    d.click("ayp.side.ai");
+    assert!(!d.has("ayp.side.portBusy"));
+    d.h.state_mut().control_busy_port = Some(9879);
+    d.frames(2);
+    let e = d.h.state().auto.query("ayp.side.portBusy");
+    assert_eq!(e.first().map(|e| e.label.as_str()), Some("Cổng 9879 đang bận — AI/MCP đang nối với app khác"));
+}
+
 #[test]
 fn no_selection_hint() {
     let mut d = Driver::launch(true);

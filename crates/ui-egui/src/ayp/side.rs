@@ -31,7 +31,15 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
         AypSideTab::Ai => {
             let r = Rect::from_min_size(body.min + vec2(6.0, 4.0), vec2(body.width() - 12.0, 60.0));
             ui.put(r, egui::Label::new(egui::RichText::new("Khung chat AI sẽ có ở bản kế tiếp. Trong lúc chờ: bấm Tìm lệnh…").color(t.text_dim)));
-            let b = Rect::from_min_size(egui::pos2(body.left() + 6.0, r.bottom() + 6.0), vec2(110.0, 28.0));
+            let mut below = r.bottom();
+            if let Some(port) = app.control_busy_port {
+                let text = format!("Cổng {port} đang bận — AI/MCP đang nối với app khác");
+                let r = Rect::from_min_size(egui::pos2(body.left() + 6.0, below + 4.0), vec2(body.width() - 12.0, 34.0));
+                let l = ui.put(r, egui::Label::new(egui::RichText::new(&text).color(t.text)));
+                app.auto.add_response("ayp.side.portBusy", &l, &text);
+                below = r.bottom();
+            }
+            let b = Rect::from_min_size(egui::pos2(body.left() + 6.0, below + 6.0), vec2(110.0, 28.0));
             let resp = ui.put(b, egui::Button::new("Tìm lệnh…"));
             app.auto.add_response("ayp.side.openPalette", &resp, "Tìm lệnh…");
             if resp.clicked() {
