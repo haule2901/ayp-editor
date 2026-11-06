@@ -385,6 +385,10 @@ pub struct FilmcraftApp {
     workspace_restored: bool,
     /// AYPEditor: open the "AYP" workspace on the first launch and autosave its layout.
     pub ayp_default: bool,
+    /// AYP: a transcription clicked last frame, run this frame once its warning is painted.
+    pub(crate) ayp_pending: Option<&'static ayp::tabs::Item>,
+    /// When the last AYP transcription finished (clicks queued while it ran are dropped).
+    pub(crate) ayp_transcribed: Option<std::time::Instant>,
     /// The AYP layout as last saved (or loaded); a different dock means a change to save.
     ayp_saved: Option<dock::Layout>,
     /// The layout seen last frame and when it last changed (for the autosave debounce).
@@ -610,6 +614,8 @@ impl FilmcraftApp {
             applied_ui_scale: None,
             workspace_restored: false,
             ayp_default: false,
+            ayp_pending: None,
+            ayp_transcribed: None,
             ayp_saved: None,
             ayp_seen: None,
             workspaces,
@@ -1846,6 +1852,7 @@ impl FilmcraftApp {
         self.sync_pool();
         self.apply_prefs(&ctx);
         self.autosave_ayp_layout(&ctx);
+        ayp::library::run_pending(self, &ctx);
         #[cfg(not(target_arch = "wasm32"))]
         self.tick_media_refresh(&ctx);
         for ev in self.session.drain_events() {

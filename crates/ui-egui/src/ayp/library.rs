@@ -57,7 +57,51 @@ fn voiceover(app: &mut FilmcraftApp, start: bool) -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) fn click_item(app: &mut FilmcraftApp, ctx: &egui::Context, item: &Item) {
+/// Minutes the UI stands while transcribing (about 55 s per minute of speech), at least one: the media
+/// `transcript.generate` would take (the Project selection, else the open sequence's audio).
+fn transcribe_minutes(app: &FilmcraftApp) -> u64 {
+    let s = &app.session;
+    let mut items = s.state.project_selection.clone();
+    if items.is_empty()
+        && let Some(q) = s.active_sequence()
+    {
+        items = q.audio_tracks.iter().flat_map(|t| t.items.iter()).filter(|i| i.enabled).map(|i| i.item).collect();
+    }
+    items.sort_by_key(|i| i.0);
+    items.dedup();
+    let secs: f64 = items
+        .iter()
+        .filter_map(|i| match &s.project.item(*i)?.kind {
+            filmcraft_project::ItemKind::Media(m) => Some(m.duration().seconds()),
+            _ => None,
+        })
+        .sum();
+    ((secs * 55.0 / 3600.0).ceil() as u64).max(1)
+}
+
+pub(crate) fn click_item(app: &mut FilmcraftApp, ctx: &egui::Context, item: &'static Item) {
+    if item.cmd == "transcript.generate" {
+        // ponytail: transcribing blocks the UI thread until plan 2 makes it a job. Put the warning up now
+        // so it is painted, run it next frame (run_pending), and drop the clicks queued while it stood.
+        let recent = app.ayp_transcribed.is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(1));
+        if app.ayp_pending.is_none() && !recent {
+            app.ui.status = format!("Đang chép lời… app sẽ đứng khoảng {} phút, đừng tắt app", transcribe_minutes(app));
+            app.ayp_pending = Some(item);
+            ctx.request_repaint();
+        }
+        return;
+    }
+    run_item(app, ctx, item);
+}
+
+/// Run the transcription a click stashed on the frame before, now that its warning is on screen.
+pub(crate) fn run_pending(app: &mut FilmcraftApp, ctx: &egui::Context) {
+    let Some(item) = app.ayp_pending.take() else { return };
+    run_item(app, ctx, item);
+    app.ayp_transcribed = Some(std::time::Instant::now());
+}
+
+fn run_item(app: &mut FilmcraftApp, ctx: &egui::Context, item: &Item) {
     if item.kind == Kind::Run && matches!(item.cmd, "audio.voiceover.start" | "audio.voiceover.stop") {
         app.ui.status.clear();
         if let Err(e) = voiceover(app, item.cmd == "audio.voiceover.start") {
@@ -192,5 +236,48 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
         && rect.bottom() - y > 40.0
     {
         crate::panels::show(app, ui, kind, Rect::from_min_max(egui::pos2(rect.left(), y), rect.right_bottom()));
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+
+    pub(crate) fn demo() -> (FilmcraftApp, egui::Context) {
+        let mut s = filmcraft_engine::Session::default();
+        s.execute("file.openDemoProject", serde_json::json!({})).unwrap();
+        (FilmcraftApp::new(s), egui::Context::default())
+    }
+
+    /// The demo project with a transcriber that answers at once (the test build has no Whisper).
+    pub(crate) fn demo_transcribing() -> (FilmcraftApp, egui::Context) {
+        let (mut app, ctx) = demo();
+        app.session.transcriber = Some(std::sync::Arc::new(filmcraft_speech::FixedTranscriber { transcript: Default::default(), id: "fixed".into() }));
+        (app, ctx)
+    }
+
+    fn item(key: &str) -> &'static Item {
+        TABS.iter().flat_map(|t| t.items).find(|i| i.key == key).unwrap()
+    }
+
+    /// Transcribing stands the UI thread for about a minute per minute of speech: the click only puts the
+    /// warning up (so it is painted), the next frame runs it, and clicks queued meanwhile start nothing.
+    #[test]
+    fn transcribing_warns_first_and_runs_on_the_next_frame() {
+        let (mut app, ctx) = demo_transcribing();
+        let steps = |app: &FilmcraftApp| app.session.history.undo.len();
+        let before = steps(&app);
+        click_item(&mut app, &ctx, item("captions.transcribe"));
+        let warning = app.ui.status.clone();
+        assert!(warning.starts_with("Đang chép lời… app sẽ đứng khoảng ") && warning.ends_with(" phút, đừng tắt app"), "{warning}");
+        assert_eq!(steps(&app), before, "the click frame only warns");
+        click_item(&mut app, &ctx, item("transcript.generate"));
+        assert_eq!(app.ui.status, warning, "a second click while it waits does nothing");
+        run_pending(&mut app, &ctx);
+        assert_eq!(steps(&app), before + 1, "the next frame ran it once: {}", app.ui.status);
+        assert_ne!(app.ui.status, warning);
+        click_item(&mut app, &ctx, item("transcript.generate"));
+        run_pending(&mut app, &ctx);
+        assert_eq!(steps(&app), before + 1, "a click right after it finished is dropped");
     }
 }

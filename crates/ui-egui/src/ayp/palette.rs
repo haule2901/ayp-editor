@@ -346,6 +346,20 @@ mod tests {
         assert_eq!(ids.len(), n);
     }
     #[test]
+    fn transcribing_from_the_finder_warns_before_it_runs() {
+        let (mut app, ctx) = super::super::library::tests::demo_transcribing();
+        let before = app.session.history.undo.len();
+        app.ui.ayp_palette = Some("chep loi".into());
+        let hits = search(&app, "chep loi", 5);
+        let h = hits.iter().find(|h| matches!(h.run, Run::Item(i) if i.cmd == "transcript.generate")).expect("Chép lời is found");
+        run(&mut app, &ctx, h);
+        assert!(app.ui.ayp_palette.is_none());
+        assert!(app.ui.status.starts_with("Đang chép lời"), "{}", app.ui.status);
+        assert_eq!(app.session.history.undo.len(), before, "not run in the click frame");
+        super::super::library::run_pending(&mut app, &ctx);
+        assert_eq!(app.session.history.undo.len(), before + 1, "{}", app.ui.status);
+    }
+    #[test]
     fn unrelated_words_find_nothing() {
         let app = FilmcraftApp::new(filmcraft_engine::Session::default());
         assert!(search(&app, "zzqx", 5).is_empty());
