@@ -78,7 +78,14 @@ pub const TABS: &[Tab] = &[
     ]},
     Tab { id: "cut", icon: Icon::Razor, label: "Cắt bằng chữ", embed: Some(PanelKind::Text), items: &[
         c("transcript.removePauses", "Xoá khoảng lặng"),
-        c("transcript.removeFillers", "Xoá từ đệm"),
+        // The engine's default list is English only ("um", "uh"…): add the Vietnamese hesitation sounds.
+        // Words that also carry meaning (à, ừ, thì, kiểu…) are left to the editor.
+        it(
+            "transcript.removeFillers",
+            r#"{"fillers":["ờ","ơ","ờm","ừm","ưm","hừm","um","uh","umm","uhm","erm","er","ah","hmm","mm","mhm"]}"#,
+            "Xoá từ đệm",
+            "transcript.removeFillers",
+        ),
         c("transcript.lift", "Xoá chữ chọn (để lại khoảng trống)"),
         c("transcript.extract", "Xoá chữ chọn (kéo khít)"),
         c("markers.add", "Thêm marker"),

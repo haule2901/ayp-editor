@@ -197,6 +197,25 @@ fn embedded_panels_open_their_ayp_tab_instead_of_a_classic_tab() {
     assert_eq!(d.h.state().ui.ayp_side, filmcraft_ui_egui::state::AypSideTab::Props);
 }
 
+/// Xoá từ đệm removes Vietnamese hesitation sounds, not only the engine's English list.
+#[test]
+fn remove_fillers_knows_vietnamese_hesitations() {
+    let mut d = Driver::launch(true);
+    let v = d.exec("sequence.inspect", json!({}));
+    let clip = &v["result"]["video"][0]["items"][0];
+    let (item, from) = (clip["item"].clone(), clip["sourceIn"].as_i64().unwrap());
+    let half = 254_016_000_000_i64 / 2;
+    let words: Vec<Value> = ["thì", "ờ", "em", "ừm", "nghĩ"].iter().enumerate().map(|(i, w)| json!({"text": w, "start": from + i as i64 * half, "end": from + (i as i64 + 1) * half})).collect();
+    d.exec("transcript.set", json!({"item": item, "transcript": {"language": "vi", "speakers": [], "words": words}}));
+    d.click("ayp.tab.cut");
+    let before = d.undo_len();
+    d.click("ayp.item.transcript.removeFillers");
+    assert_eq!(d.undo_len(), before + 1, "{}", d.h.state().ui.status);
+    let left = d.exec("transcript.inspect", json!({}));
+    let texts: Vec<_> = left["result"]["words"].as_array().unwrap().iter().map(|w| w["text"].as_str().unwrap().to_string()).collect();
+    assert_eq!(texts, ["thì", "em", "nghĩ"]);
+}
+
 #[test]
 fn no_open_sequence_shows_a_hint() {
     let d = Driver::launch(false);
