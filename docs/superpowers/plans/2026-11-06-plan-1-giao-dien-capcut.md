@@ -258,6 +258,11 @@ pub fn find_cmd(cmd: &str) -> Option<(&'static Tab, &'static Item)>;
   - Lưới thẻ (icon + nhãn, 2 hàng).
   - Danh sách nút của thẻ đang mở: nút rộng, chữ tiếng Việt, tooltip là id lệnh. Lệnh có `enabled()` lỗi thì mờ đi.
   - Bấm nút → `invoke`. Lỗi → `ui.status = format!("Chưa làm được: {}", vi::reason(&e))`.
+  - Tôn trọng `Item.kind` (thêm ở fix round của Task 3):
+    - `Kind::Run`: gọi `invoke`. Nếu thành công thì chạy lần lượt các cặp trong `Item.then`; cặp nào lỗi thì dừng và ghi status.
+    - `Kind::Panel`: không gọi lệnh. Cuộn hoặc làm nổi panel `embed` bên dưới, rồi ghi status "Chọn trong bảng bên dưới".
+    - `Kind::Ai`: nút mờ, không bấm được, tooltip "AI dùng lệnh này — hỏi trong tab AI hoặc Tìm lệnh…".
+    - Test thêm: click một item Panel thì history không đổi và status có chữ "bên dưới"; item Ai không chạy lệnh.
   - Phần còn lại vẽ panel `embed`.
 - [ ] **Step 4:** Test PASS, cả crate PASS.
 - [ ] **Step 5:** Commit `feat(aypeditor): left tab library with one-click features`.
