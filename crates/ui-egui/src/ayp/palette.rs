@@ -3,12 +3,25 @@ use super::{tabs::TABS, vi};
 use crate::FilmcraftApp;
 use egui::{Align2, FontId, Key, Modifiers, Sense, vec2};
 
+/// What running a hit does: the same as clicking it where it lives.
+#[derive(Clone, Copy)]
+pub enum Run {
+    /// A plain command, no parameters.
+    Command(&'static str),
+    /// An item of an AYP tab (library.rs's click path).
+    Item(&'static super::tabs::Item),
+    /// A toolbar button: command and JSON params.
+    Tool(&'static str, &'static str),
+}
+
 pub struct Hit {
+    /// Command id, or `effects.apply.<effect>` for a tab item without its own command.
     pub id: &'static str,
     pub label_vi: String,
     pub label_en: &'static str,
     pub enabled: Result<(), String>,
     pub score: i32,
+    pub run: Run,
 }
 
 /// Lower-case and strip Vietnamese marks: "Xoá khoảng lặng Đ" -> "xoa khoang lang d".
@@ -54,23 +67,72 @@ fn hit(tok: &str, field: &str, (pre, sub): (i32, i32)) -> i32 {
     }
 }
 
+struct Cand {
+    id: &'static str,
+    run: Run,
+    /// Labels the user may type against: the shown one first. Empty = a UI command outside the menus.
+    labels: Vec<String>,
+    en: &'static str,
+    enabled: Result<(), String>,
+    listed: bool,
+}
+
+fn state_of(app: &FilmcraftApp, cmd: &str) -> Result<(), String> {
+    match filmcraft_engine::find_command(cmd) {
+        Some(c) => (c.enabled)(&app.session),
+        None => Ok(()),
+    }
+}
+
+fn label_of(cmd: &str) -> &'static str {
+    filmcraft_engine::find_command(cmd).map(|c| c.label).or_else(|| crate::menus::UI_COMMANDS.iter().find(|u| u.id == cmd).map(|u| u.label)).unwrap_or("")
+}
+
+fn candidates(app: &FilmcraftApp) -> Vec<Cand> {
+    use super::tabs::Kind;
+    use super::toolbar::{BUTTONS, EXPORT};
+    let mut out: Vec<Cand> = Vec::new();
+    for item in TABS.iter().flat_map(|t| t.items) {
+        let enabled = if item.kind == Kind::Ai { Err("AI dùng lệnh này: hãy hỏi trong tab AI".to_string()) } else { state_of(app, item.cmd) };
+        out.push(Cand { id: item.key, run: Run::Item(item), labels: vec![item.label.into()], en: label_of(item.cmd), enabled, listed: true });
+    }
+    let tools: &'static [(&str, &str, &str, crate::icons::Icon)] = &BUTTONS;
+    for b in tools.iter().chain(std::iter::once(&EXPORT)) {
+        // a tab item for the same command takes the toolbar's name as one more thing to match
+        if let Some(c) = out.iter_mut().find(|c| c.id == b.1) {
+            c.labels.push(b.0.into());
+        } else {
+            out.push(Cand { id: b.1, run: Run::Tool(b.1, b.2), labels: vec![b.0.into()], en: label_of(b.1), enabled: state_of(app, b.1), listed: true });
+        }
+    }
+    let covered: Vec<&str> = out.iter().map(|c| c.id).collect();
+    let engine: Vec<_> = filmcraft_engine::command_specs().iter().filter(|c| !covered.contains(&c.id)).map(|c| (c.id, c.label, (c.enabled)(&app.session), true)).collect();
+    let ui: Vec<_> = crate::menus::UI_COMMANDS.iter().filter(|c| !covered.contains(&c.id)).map(|c| (c.id, c.label, Ok(()), !c.menu.is_empty())).collect();
+    for (id, en, enabled, in_menu) in engine.into_iter().chain(ui) {
+        let label = if vi::has(en) { vi::vi(en).to_string() } else { en.to_string() };
+        out.push(Cand { id, run: Run::Command(id), labels: if in_menu { vec![label] } else { vec![] }, en, enabled, listed: false });
+    }
+    out
+}
+
 pub fn search(app: &FilmcraftApp, query: &str, limit: usize) -> Vec<Hit> {
     let q = words(query);
     let toks: Vec<&str> = q.split_whitespace().collect();
-    let in_tab = |id: &str| TABS.iter().any(|t| t.items.iter().any(|i| i.cmd == id));
-    let engine = filmcraft_engine::command_specs().iter().map(|c| (c.id, c.label, (c.enabled)(&app.session)));
-    let ui = crate::menus::UI_COMMANDS.iter().map(|c| (c.id, c.label, Ok(())));
-    let mut hits: Vec<Hit> = engine
-        .chain(ui)
-        .filter_map(|(id, en, enabled)| {
-            let label_vi = vi::vi(en).to_string();
-            let vi_w = words(&label_vi);
-            let syn: Vec<String> = vi::synonyms(en).into_iter().map(words).collect();
-            let (en_w, id_w) = (words(en), words(id));
+    let phrase = toks.join(" ");
+    let mut hits: Vec<Hit> = candidates(app)
+        .into_iter()
+        .filter_map(|c| {
+            let hidden = c.labels.is_empty();
+            let labels: Vec<String> = c.labels.iter().map(|l| words(l)).collect();
+            let syn: Vec<String> = vi::synonyms(c.en).into_iter().map(words).collect();
+            let (en_w, id_w) = (words(c.en), words(c.id));
+            if hidden && !toks.iter().all(|t| id_w.contains(t)) {
+                return None;
+            }
             let mut score = 0;
             for t in &toks {
                 let best = [
-                    hit(t, &vi_w, (100, 55)),
+                    labels.iter().map(|l| hit(t, l, (100, 55))).max().unwrap_or(0),
                     syn.iter().map(|s| hit(t, s, (80, 45))).max().unwrap_or(0),
                     hit(t, &en_w, (50, 25)),
                     hit(t, &id_w, (20, 10)),
@@ -83,20 +145,21 @@ pub fn search(app: &FilmcraftApp, query: &str, limit: usize) -> Vec<Hit> {
                 }
                 score += best;
             }
-            let label = vi_w.trim();
-            let phrase = toks.join(" ");
             if !toks.is_empty() {
-                if label == phrase {
-                    score += 140;
-                } else if label.starts_with(&phrase) {
-                    score += 40;
-                } else if label.contains(&phrase) {
-                    score += 30;
-                }
+                // the phrase against the best of the Vietnamese labels and the synonyms
+                let bonus = |f: &String, (exact, prefix, inside): (i32, i32, i32)| {
+                    let f = f.trim();
+                    if f == phrase { exact } else if f.starts_with(&phrase) { prefix } else if f.contains(&phrase) { inside } else { 0 }
+                };
+                score += labels.iter().map(|l| bonus(l, (140, 40, 30))).chain(syn.iter().map(|s| bonus(s, (120, 35, 25)))).max().unwrap_or(0);
             }
-            score += if enabled.is_ok() { 15 } else { 0 } + if in_tab(id) { 70 } else { 0 };
-            score -= (label.len() as i32) / 4; // shorter label = more likely what was meant
-            Some(Hit { id, label_vi, label_en: en, enabled, score })
+            score += if c.enabled.is_ok() { 15 } else { 0 } + if c.listed { 70 } else { 0 };
+            score -= labels.first().map_or(0, |l| l.trim().len() as i32 / 4); // shorter = more likely meant
+            if !c.listed && !vi::has(c.en) {
+                score -= 40; // no Vietnamese name yet
+            }
+            let label_vi = c.labels.first().cloned().unwrap_or_else(|| c.en.to_string());
+            Some(Hit { id: c.id, label_vi, label_en: c.en, enabled: c.enabled, score, run: c.run })
         })
         .collect();
     hits.sort_by(|a, b| b.score.cmp(&a.score).then_with(|| fold(&a.label_vi).cmp(&fold(&b.label_vi))));
@@ -109,11 +172,22 @@ const ROW_H: f32 = 46.0;
 const WIDTH: f32 = 580.0;
 
 fn run(app: &mut FilmcraftApp, ctx: &egui::Context, h: &Hit) {
-    if h.enabled.is_err() {
-        return; // the row already shows why; stay open so the user can pick another
+    if let Err(why) = &h.enabled {
+        // stay open so the user can pick another; say why on the status line too
+        app.ui.status = format!("Chưa làm được: {}", vi::reason(why));
+        return;
     }
     app.ui.ayp_palette = None;
-    if let Err(e) = crate::menus::invoke(app, ctx, h.id, serde_json::json!({})) {
+    match h.run {
+        Run::Item(item) => super::library::click_item(app, ctx, item),
+        Run::Command(id) => run_cmd(app, ctx, id, "{}"),
+        Run::Tool(id, params) => run_cmd(app, ctx, id, params),
+    }
+}
+
+fn run_cmd(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, params: &str) {
+    let p = serde_json::from_str(params).unwrap_or_default();
+    if let Err(e) = crate::menus::invoke(app, ctx, id, p) {
         app.ui.status = format!("Chưa làm được: {}", vi::reason(&e));
     }
 }
@@ -142,7 +216,7 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) {
         sel = sel.saturating_sub(1);
     }
     sel = sel.min(hits.len().saturating_sub(1));
-    if enter && let Some(h) = hits.get(sel) {
+    if enter && !query.trim().is_empty() && let Some(h) = hits.get(sel) {
         run(app, ctx, h);
         return;
     }
@@ -238,6 +312,36 @@ mod tests {
     fn every_command_is_searchable() {
         let app = FilmcraftApp::new(filmcraft_engine::Session::default());
         assert!(search(&app, "", usize::MAX).len() >= 700);
+    }
+    #[test]
+    fn common_queries_find_the_ayp_surface() {
+        let app = FilmcraftApp::new(filmcraft_engine::Session::default());
+        let ids = |q: &str| search(&app, q, 6).into_iter().map(|h| h.id).collect::<Vec<_>>();
+        for (q, want, within) in [
+            ("phu de", "transcript.createCaptionsVi", 1),
+            ("cat", "sequence.addEdit", 1),
+            ("xoa", "edit.rippleDelete", 2),
+            ("xuat", "file.exportMedia", 1),
+            ("lam mo", "effects.apply.gaussian_blur", 1),
+            ("giong doc", "tts.create", 2),
+            ("giam on", "effects.apply.denoise", 1),
+            ("chong rung", "effects.apply.warp_stabilizer", 1),
+            ("xoa phong xanh", "effects.apply.ultra_key", 1),
+            ("lam min da", "effects.apply.skin_smooth", 1),
+        ] {
+            let got = ids(q);
+            assert!(got.iter().take(within).any(|i| *i == want), "{q}: {got:?}");
+        }
+    }
+    #[test]
+    fn a_command_is_not_listed_twice() {
+        let app = FilmcraftApp::new(filmcraft_engine::Session::default());
+        let all = search(&app, "", usize::MAX);
+        let mut ids: Vec<_> = all.iter().map(|h| h.id).collect();
+        let n = ids.len();
+        ids.sort();
+        ids.dedup();
+        assert_eq!(ids.len(), n);
     }
     #[test]
     fn unrelated_words_find_nothing() {

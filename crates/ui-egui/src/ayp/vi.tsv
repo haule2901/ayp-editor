@@ -319,3 +319,4 @@ err	no sequence	Chưa có chuỗi dựng nào.
 err	select a video clip	Hãy chọn một đoạn hình.
 err	select a clip with a media file	Hãy chọn đoạn phim có tệp phương tiện.
 err	select a clip with audio in the Project panel	Hãy chọn đoạn phim có âm thanh trong bảng Dự án.
+	Find Command…	Tìm lệnh…

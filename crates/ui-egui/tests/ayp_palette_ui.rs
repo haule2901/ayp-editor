@@ -129,6 +129,19 @@ fn typing_does_not_trigger_editor_shortcuts() {
     assert_eq!(d.h.state().ui.ayp_palette.as_deref(), Some("cv"));
 }
 
+#[test]
+fn enter_on_nothing_does_nothing_and_a_disabled_hit_says_why() {
+    let mut d = Driver::launch();
+    d.exec("ayp.palette.open", json!({}));
+    d.frames(3);
+    d.ok("ui.key", json!({"key": "Enter"}));
+    assert!(d.has("ayp.palette"), "Enter with no text keeps the finder open");
+    d.ok("ui.type", json!({"text": "phu de tieng viet"}));
+    d.ok("ui.key", json!({"key": "Enter"}));
+    assert!(d.has("ayp.palette"));
+    assert!(d.h.state().ui.status.starts_with("Chưa làm được:"), "{}", d.h.state().ui.status);
+}
+
 /// `AYP_PALETTE_PNG=/path.png cargo test --test ayp_palette_ui snapshot -- --ignored` writes a picture of the open finder.
 #[test]
 #[ignore]

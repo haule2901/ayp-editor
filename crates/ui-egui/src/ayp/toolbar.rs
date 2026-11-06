@@ -5,7 +5,7 @@ use crate::icons::Icon;
 use egui::{Rect, Sense, vec2};
 
 /// (label, command, params, icon). Export is drawn separately, flush right.
-const BUTTONS: [(&str, &str, &str, Icon); 10] = [
+pub(crate) const BUTTONS: [(&str, &str, &str, Icon); 10] = [
     ("Hoàn tác", "edit.undo", "{}", Icon::Undo),
     ("Làm lại", "edit.redo", "{}", Icon::Redo),
     ("Tách", "sequence.addEdit", "{}", Icon::Razor),
@@ -17,7 +17,7 @@ const BUTTONS: [(&str, &str, &str, Icon); 10] = [
     ("Thu nhỏ", "view.zoomOut", "{}", Icon::Zoom),
     ("Phóng to", "view.zoomIn", "{}", Icon::Zoom),
 ];
-const EXPORT: (&str, &str, &str, Icon) = ("Xuất", "file.exportMedia", "{}", Icon::Export);
+pub(crate) const EXPORT: (&str, &str, &str, Icon) = ("Xuất", "file.exportMedia", "{}", Icon::Export);
 const H: f32 = 28.0;
 
 fn run(app: &mut FilmcraftApp, ctx: &egui::Context, cmd: &str, params: &str) {

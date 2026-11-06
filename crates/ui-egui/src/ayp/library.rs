@@ -18,7 +18,7 @@ fn run(app: &mut FilmcraftApp, ctx: &egui::Context, cmd: &str, params: &str) -> 
     crate::menus::invoke(app, ctx, cmd, p).map(|_| ())
 }
 
-fn click_item(app: &mut FilmcraftApp, ctx: &egui::Context, item: &Item) {
+pub(crate) fn click_item(app: &mut FilmcraftApp, ctx: &egui::Context, item: &Item) {
     match item.kind {
         Kind::Panel => app.ui.status = "Chọn trong bảng bên dưới".into(),
         Kind::Ai => {}
