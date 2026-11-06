@@ -46,7 +46,7 @@ pub fn reason(engine_error: &str) -> String {
             .collect()
     });
     let low = engine_error.to_lowercase();
-    rows.iter().find(|(s, _)| low.contains(s.as_str())).map(|(_, t)| t.clone()).unwrap_or_else(|| engine_error.to_string())
+    rows.iter().filter(|(s, _)| low.contains(s.as_str())).max_by_key(|(s, _)| s.len()).map(|(_, t)| t.clone()).unwrap_or_else(|| engine_error.to_string())
 }
 
 #[cfg(test)]
@@ -65,6 +65,11 @@ mod tests {
     #[test]
     fn errors_are_explained() {
         assert!(reason("select clips first").contains("chọn"));
+    }
+    #[test]
+    fn longest_error_row_wins() {
+        assert!(reason("select a clip with audio").contains("âm thanh"));
+        assert_eq!(reason("select a clip"), "Hãy chọn một đoạn phim.");
     }
     #[test]
     fn tsv_parses_cleanly() {

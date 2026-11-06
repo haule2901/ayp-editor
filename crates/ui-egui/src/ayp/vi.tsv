@@ -268,7 +268,7 @@ syn	Transcribe…	chép lời|gỡ băng|transcript
 syn	Create Captions from Transcript…	phụ đề|caption|sub
 syn	Add Caption at Playhead	phụ đề|thêm sub|caption
 syn	Text	chữ|văn bản|tiêu đề|title
-syn	Duplicate	nhân đôi|sao chép|copy
+syn	Duplicate	nhân đôi
 syn	Scale to Frame Size	vừa khung|phóng to|co giãn
 syn	Import…	nhập|thêm phương tiện|import
 syn	Group	nhóm|gom
@@ -310,3 +310,12 @@ err	the project is empty	Dự án đang trống.
 err	the project has no sequences	Dự án chưa có chuỗi dựng nào.
 err	open a clip in the Source monitor	Hãy mở một đoạn phim ở màn hình nguồn hoặc chọn một đoạn.
 err	cancelled	Đã huỷ.
+err	select a graphic clip	Hãy chọn một đoạn đồ hoạ.
+err	select an offline clip	Hãy chọn một đoạn phim ngoại tuyến.
+err	select an audio clip	Hãy chọn một đoạn âm thanh.
+err	select items in the Project panel	Hãy chọn các mục trong bảng Dự án.
+err	select files in the Media Browser	Hãy chọn tệp trong trình duyệt phương tiện.
+err	no sequence	Chưa có chuỗi dựng nào.
+err	select a video clip	Hãy chọn một đoạn hình.
+err	select a clip with a media file	Hãy chọn đoạn phim có tệp phương tiện.
+err	select a clip with audio in the Project panel	Hãy chọn đoạn phim có âm thanh trong bảng Dự án.
