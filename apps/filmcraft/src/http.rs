@@ -9,6 +9,10 @@ use std::time::Duration;
 /// Longest answer we read; anything bigger is an error, not an allocation.
 const MAX_BODY: u64 = 8 * 1024 * 1024;
 
+/// Longest `retry-after` we pass on (seconds); a hostile `1e308` must not reach `Duration::from_secs_f64`.
+/// The HTTP-date form of the header is not parsed and comes back as `None`.
+const MAX_RETRY_AFTER: f64 = 3600.0;
+
 fn agent() -> ureq::Agent {
     let provider = Arc::new(rustls_rustcrypto::provider());
     ureq::Agent::config_builder()
@@ -34,8 +38,13 @@ fn post(agent: &ureq::Agent, req: &HttpRequest) -> Result<HttpResponse, String> 
     }
     let resp = builder.send(req.body.as_str()).map_err(|e| e.to_string())?;
     let status = resp.status().as_u16();
-    let retry_after =
-        resp.headers().get("retry-after").and_then(|v| v.to_str().ok()).and_then(|v| v.trim().parse::<f64>().ok()).filter(|s| s.is_finite() && *s >= 0.0);
+    let retry_after = resp
+        .headers()
+        .get("retry-after")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.trim().parse::<f64>().ok())
+        .filter(|s| s.is_finite() && *s >= 0.0)
+        .map(|s| s.min(MAX_RETRY_AFTER));
     let mut body = String::new();
     // One byte past the cap tells "exactly at the cap" from "too long".
     let n = resp.into_body().into_reader().take(MAX_BODY + 1).read_to_string(&mut body).map_err(|e| e.to_string())?;
@@ -80,6 +89,14 @@ mod tests {
         let url = serve("HTTP/1.1 429 Too Many Requests\r\nretry-after: 2\r\ncontent-length: 4\r\nconnection: close\r\n\r\nslow");
         let r = http_post()(&req(url)).expect("a 429 is Ok");
         assert_eq!(r, HttpResponse { status: 429, retry_after: Some(2.0), body: "slow".into() });
+    }
+
+    #[test]
+    fn retry_after_is_clamped_and_junk_is_none() {
+        let url = serve("HTTP/1.1 429 X\r\nretry-after: 1e308\r\ncontent-length: 0\r\nconnection: close\r\n\r\n");
+        assert_eq!(http_post()(&req(url)).expect("Ok").retry_after, Some(3600.0));
+        let url = serve("HTTP/1.1 429 X\r\nretry-after: abc\r\ncontent-length: 0\r\nconnection: close\r\n\r\n");
+        assert_eq!(http_post()(&req(url)).expect("Ok").retry_after, None);
     }
 
     #[test]
