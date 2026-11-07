@@ -42,7 +42,6 @@
 	Apply Default Transitions to Selection	選択範囲に既定のトランジションを適用
 	Apply Video Transition	ビデオトランジションを適用
 	Arrange	重ね順
-	ArtCraft Website	ArtCraft の Web サイト
 	Assembly	アセンブリ
 	Attach Proxies…	プロキシを関連付け…
 	Audio Channels…	オーディオチャンネル…
@@ -137,8 +136,6 @@
 	File…	ファイル…
 	Fill frame	フレームを埋める
 	FilmCraft Help…	FilmCraft ヘルプ…
-	FilmCraft on GitHub	GitHub の FilmCraft
-	FilmCraft on getartcraft.com	getartcraft.com の FilmCraft
 	Find Next	次を検索
 	Find…	検索…
 	Fit	合わせる
@@ -182,7 +179,6 @@
 	Insert Frame Hold Segment	フレームホールドセグメントを挿入
 	Install Motion Graphics Template…	モーショングラフィックステンプレートをインストール…
 	Interpret Footage…	素材を解釈…
-	Join the ArtCraft Discord…	ArtCraft の Discord に参加…
 	Keyboard Shortcuts…	キーボードショートカット…
 	Label	ラベル
 	Labels…	ラベル…
@@ -275,7 +271,6 @@
 	Render Selection	選択範囲をレンダリング
 	Replace Fonts in Projects…	プロジェクト内のフォントを置換…
 	Replace With Clip	クリップで置換
-	Report an Issue…	問題を報告…
 	Reset All Parameters	すべてのパラメーターをリセット
 	Reset Duration	長さをリセット
 	Reset to Saved Layout	保存したレイアウトにリセット
@@ -376,7 +371,6 @@
 	Master volume: use the Audio Track Mixer	マスター音量はオーディオトラックミキサーで調整してください
 	Search	検索
 	Quick Export	クイック書き出し
-	Join the ArtCraft Discord (discord.gg/artcraft)	ArtCraft の Discord に参加 (discord.gg/artcraft)
 	Cancel	キャンセル
 	OK	OK
 	Interpret Footage	素材を解釈
@@ -416,9 +410,6 @@
 	All Empty Tracks	すべての空のトラック
 	Version {version}	バージョン {version}
 	A clean-room, pure-Rust non-linear video editor. Part of the ArtCraft family.	Rust だけで書かれた、クリーンルーム設計のノンリニアビデオ編集ソフトです。ArtCraft ファミリーの一員です。
-	Join the ArtCraft Discord	ArtCraft の Discord に参加
-	Source code on GitHub	GitHub のソースコード
-	Report an issue	問題を報告
 	MIT OR Apache-2.0. Fonts: Inter, Noto Serif and JetBrains Mono (SIL OFL 1.1).	MIT OR Apache-2.0。フォント: Inter、Noto Serif、JetBrains Mono (SIL OFL 1.1)。
 	just now	たった今
 	{n} s ago	{n} 秒前
@@ -456,8 +447,6 @@
 	A cut sequence with transitions, effects and music	トランジション、エフェクト、音楽を含む編集済みのシーケンス
 	Bars and Tone	カラーバーとトーン
 	SMPTE HD bars with 1 kHz reference tone	1 kHz 基準トーン付きの SMPTE HD カラーバー
-	Community	コミュニティ
-	Join us on Discord	Discord に参加
 	OMF Export Settings	OMF 書き出し設定
 	AAF Export Settings	AAF 書き出し設定
 	OMF Title:	OMF タイトル:
@@ -2967,7 +2956,6 @@
 	Click to zoom in; Opt-click to zoom out.	クリックでズームイン、Opt+クリックでズームアウトします。
 	FilmCraft hit an error	FilmCraft でエラーが発生しました
 	Details: {path}	詳細: {path}
-	Opened {url}	{url} を開きました
 	(empty)	(空)
 	Step Back 1 Frame	1 フレーム戻る
 	Step Forward 1 Frame	1 フレーム進む
@@ -3607,7 +3595,7 @@
 	Opens in your web browser: {url}	ウェブブラウザーで開きます：{url}
 	Saves this session's log and shows it in your file manager.	このセッションのログを保存し、ファイルマネージャーで表示します。
 	Shows a report on this computer.	このコンピューターのレポートを表示します。
-	Shows the version, community links and credits in a FilmCraft window.	バージョン、コミュニティへのリンク、クレジットを FilmCraft のウィンドウに表示します。
+	Shows the version and credits in a FilmCraft window.	バージョンとクレジットを FilmCraft のウィンドウに表示します。
 	Couldn't open your web browser	ウェブブラウザーを開けませんでした
 	Open this address in your browser yourself:	このアドレスをご自身でブラウザーで開いてください：
 	Delete preset	プリセットを削除

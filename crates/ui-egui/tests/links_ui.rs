@@ -1,8 +1,6 @@
-//! Headless UI test of the community links: Help menu commands, the header Discord button, the
-//! About dialog and the Home (Import) screen.
-//!
-//! Set `FILMCRAFT_UI_SNAPSHOT_DIR=<dir>` to also render the window offscreen with wgpu and write
-//! `links-*.png` there; without it no GPU is needed.
+//! Headless UI test: AYPEditor has no community links. No Discord button in the header, no
+//! Discord/website/GitHub/issue items in the Help menu, none in About, no Community section on
+//! the Home (Import) screen.
 
 use std::sync::mpsc::{Sender, channel};
 
@@ -10,13 +8,11 @@ use egui_kittest::Harness;
 use filmcraft_engine::Session;
 use filmcraft_ui_egui::FilmcraftApp;
 use filmcraft_ui_egui::control::ControlRequest;
-use filmcraft_ui_egui::links;
 use serde_json::{Value, json};
 
 struct Driver {
     harness: Harness<'static, FilmcraftApp>,
     tx: Sender<ControlRequest>,
-    snapshots: Option<std::path::PathBuf>,
 }
 
 impl Driver {
@@ -25,13 +21,8 @@ impl Driver {
         session.execute("file.openDemoProject", json!({})).expect("demo project");
         let (tx, rx) = channel();
         let app = FilmcraftApp::new(session).with_control(rx);
-        let snapshots = std::env::var_os("FILMCRAFT_UI_SNAPSHOT_DIR").map(std::path::PathBuf::from);
-        let mut b = Harness::builder().with_size(egui::vec2(1600.0, 980.0)).with_max_steps(10_000);
-        if snapshots.is_some() {
-            b = b.wgpu();
-        }
-        let harness = b.build_eframe(move |_cc| app);
-        let mut d = Driver { harness, tx, snapshots };
+        let harness = Harness::builder().with_size(egui::vec2(1600.0, 980.0)).with_max_steps(10_000).build_eframe(move |_cc| app);
+        let mut d = Driver { harness, tx };
         d.frames(4);
         d
     }
@@ -46,70 +37,55 @@ impl Driver {
         }
     }
 
-    fn ok(&mut self, method: &str, params: Value) -> Value {
+    fn call(&mut self, method: &str, params: Value) -> Value {
         let (req, reply) = ControlRequest::new(method, params.clone());
         self.tx.send(req).unwrap();
         for _ in 0..600 {
             self.frames(1);
             if let Ok(v) = reply.try_recv() {
-                assert_eq!(v["ok"], json!(true), "{method} {params} failed: {v}");
-                return v["result"].clone();
+                return v;
             }
         }
         panic!("no reply to {method} {params}");
+    }
+
+    fn ok(&mut self, method: &str, params: Value) -> Value {
+        let v = self.call(method, params.clone());
+        assert_eq!(v["ok"], json!(true), "{method} {params} failed: {v}");
+        v["result"].clone()
     }
 
     fn ids(&mut self, prefix: &str) -> Vec<String> {
         let v = self.ok("ui.elements", json!({"prefix": prefix}));
         v.as_array().unwrap().iter().filter_map(|e| e["id"].as_str().map(str::to_string)).collect()
     }
-
-    fn snapshot(&mut self, name: &str) {
-        let Some(dir) = self.snapshots.clone() else { return };
-        self.frames(2);
-        match self.harness.render() {
-            Ok(img) => {
-                std::fs::create_dir_all(&dir).unwrap();
-                img.save(dir.join(format!("links-{name}.png"))).unwrap();
-            }
-            Err(e) => eprintln!("snapshot {name} skipped: {e}"),
-        }
-    }
 }
 
 #[test]
-fn community_links_everywhere() {
+fn no_community_links_anywhere() {
     let mut d = Driver::demo();
-    // Help menu: every link is a command that reports the URL it opened.
-    for (id, _, url) in links::ALL {
-        let r = d.ok("engine.execute", json!({"command": id, "params": {}}));
-        assert_eq!(r["url"], json!(url), "{id}");
+    let gone = ["help.discord", "help.website", "help.appPage", "help.github", "help.reportIssue"];
+    let menu = d.ok("ui.menu.list", json!({})).to_string();
+    for id in gone {
+        assert!(!menu.contains(id), "Help menu still lists {id}");
+        let r = d.call("engine.execute", json!({"command": id, "params": {}}));
+        assert_ne!(r["ok"], json!(true), "{id} still runs: {r}");
     }
-    let menu = d.ok("ui.menu.list", json!({}));
-    let text = menu.to_string();
-    for (id, label, _) in links::ALL {
-        assert!(text.contains(id) && text.contains(label), "Help menu lists {id}");
-    }
-    // Header: the Discord button is always there.
-    assert_eq!(d.ids("header.discord"), vec!["header.discord".to_string()]);
-    d.snapshot("header");
-    // About dialog: Discord first, then website, app page, GitHub, issues.
+    assert!(!menu.to_lowercase().contains("discord"), "no Discord in any menu");
+    assert!(d.ids("header.discord").is_empty(), "header Discord button is gone");
+    // About keeps version and licence, without link buttons.
     d.ok("engine.execute", json!({"command": "app.about", "params": {}}));
     d.frames(3);
     let about = d.ids("about.");
+    assert!(about.iter().any(|a| a.starts_with("about.tab.")), "About is open: {about:?}");
     for id in ["about.discord", "about.website", "about.appPage", "about.github", "about.reportIssue"] {
-        assert!(about.iter().any(|a| a == id), "{id} in {about:?}");
+        assert!(!about.iter().any(|a| a == id), "{id} still in About");
     }
-    d.snapshot("about");
     d.ok("ui.key", json!({"key": "Escape"}));
     d.frames(3);
-    assert!(d.ids("about.").is_empty(), "Escape closes About");
-    // Home screen (Import mode): community links.
+    // Home screen: no Community section.
     d.ok("engine.execute", json!({"command": "mode.import", "params": {}}));
     d.frames(3);
-    let home = d.ids("import.link.");
-    for id in ["import.link.discord", "import.link.website", "import.link.appPage", "import.link.github"] {
-        assert!(home.iter().any(|a| a == id), "{id} in {home:?}");
-    }
-    d.snapshot("home");
+    assert!(d.ids("import.link.").is_empty(), "Home has no community links");
+    assert!(!d.ids("import.").is_empty(), "Home still shows its import cards");
 }

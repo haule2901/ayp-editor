@@ -231,7 +231,6 @@
 	APV 422-12	APV 422-12
 	Are you sure you want to discard your changes to '{file}'?	'{file}'의 변경 사항을 버릴까요?
 	Arrange	배치
-	ArtCraft Website	ArtCraft 웹사이트
 	ASC CDL	ASC CDL
 	Aspect	종횡비
 	Assembly	어셈블리
@@ -664,7 +663,6 @@
 	Comment	주석
 	Comments:	설명:
 	Commits	커밋
-	Community	커뮤니티
 	Company	회사
 	Comparison	비교
 	Comparison View	비교 보기
@@ -1162,8 +1160,6 @@
 	FilmCraft Help…	FilmCraft 도움말…
 	FilmCraft hit an error	FilmCraft 오류 발생
 	FilmCraft keeps the rest of the RAM free for other applications.	FilmCraft는 나머지 RAM을 다른 앱용으로 비워 둡니다.
-	FilmCraft on getartcraft.com	getartcraft.com의 FilmCraft
-	FilmCraft on GitHub	GitHub의 FilmCraft
 	FilmCraft Project	FilmCraft 프로젝트
 	FilmCraft quit unexpectedly while “{name}” had unsaved changes.	“{name}”의 변경 사항을 저장하지 않은 채 FilmCraft가 비정상 종료되었습니다.
 	FilmCraft was closed while “{name}” had unsaved changes.	“{name}”의 변경 사항을 저장하지 않은 채 FilmCraft가 닫혔습니다.
@@ -1573,11 +1569,7 @@
 	Italian	이탈리아어
 	Japanese	일본어
 	JetBrains Mono	JetBrains Mono
-	Join the ArtCraft Discord	ArtCraft Discord 참여
-	Join the ArtCraft Discord (discord.gg/artcraft)	ArtCraft Discord 참여(discord.gg/artcraft)
-	Join the ArtCraft Discord…	ArtCraft Discord 참여…
 	Join Through Edits	통과 편집 결합
-	Join us on Discord	Discord 참여하기
 	JPEG	JPEG
 	JPEG Sequence	JPEG 시퀀스
 	just now	방금
@@ -2164,7 +2156,6 @@
 	Open new tab	새 탭 열기
 	Open Project…	프로젝트 열기…
 	Open Search	검색 열기
-	Opened {url}	{url} 열림
 	OpenEXR	OpenEXR
 	OpenEXR Sequence	OpenEXR 시퀀스
 	Opens up the shadows	그림자를 밝힙니다
@@ -2534,8 +2525,6 @@
 	Replace:	바꾸기:
 	Replaced {n} font uses	글꼴 사용 {n}곳 바꿈
 	Replicate	복제
-	Report an issue	문제 신고
-	Report an Issue…	문제 신고…
 	Reset	재설정
 	Reset All Parameters	모든 매개변수 재설정
 	Reset Duration	지속 시간 재설정
@@ -2935,7 +2924,6 @@
 	Sort Order	정렬 순서
 	Source	소스
 	Source channels the selected audio clips play:	선택한 오디오 클립이 재생할 소스 채널:
-	Source code on GitHub	GitHub 소스 코드
 	Source In/Out	소스 시작/끝
 	Source Play/Stop	소스 재생/정지
 	Source Point	소스 지점
@@ -3593,6 +3581,6 @@
 	Opens in your web browser: {url}	웹 브라우저에서 엽니다: {url}
 	Saves this session's log and shows it in your file manager.	이 세션의 로그를 저장하고 파일 관리자에서 보여 줍니다.
 	Shows a report on this computer.	이 컴퓨터에 대한 보고서를 보여 줍니다.
-	Shows the version, community links and credits in a FilmCraft window.	FilmCraft 창에 버전, 커뮤니티 링크, 제작진을 보여 줍니다.
+	Shows the version and credits in a FilmCraft window.	FilmCraft 창에 버전과 제작진을 보여 줍니다.
 	Couldn't open your web browser	웹 브라우저를 열 수 없습니다
 	Open this address in your browser yourself:	이 주소를 브라우저에서 직접 여세요:

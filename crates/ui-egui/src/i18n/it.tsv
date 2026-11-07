@@ -40,7 +40,6 @@
 	Apply Default Transitions to Selection	Applica transizioni predefinite alla selezione
 	Apply Video Transition	Applica transizione video
 	Arrange	Disponi
-	ArtCraft Website	Sito web di ArtCraft
 	Assembly	Assemblaggio
 	Attach Proxies…	Associa proxy…
 	Audio Channels…	Canali audio…
@@ -134,8 +133,6 @@
 	File…	File…
 	Fill frame	Riempi il fotogramma
 	FilmCraft Help…	Guida di FilmCraft…
-	FilmCraft on GitHub	FilmCraft su GitHub
-	FilmCraft on getartcraft.com	FilmCraft su getartcraft.com
 	Find Next	Trova successivo
 	Find…	Trova…
 	Fit	Adatta
@@ -179,7 +176,6 @@
 	Insert Frame Hold Segment	Inserisci segmento di fermo immagine
 	Install Motion Graphics Template…	Installa modello di grafica animata…
 	Interpret Footage…	Interpreta metraggio…
-	Join the ArtCraft Discord…	Unisciti al Discord di ArtCraft…
 	Keyboard Shortcuts…	Scorciatoie da tastiera…
 	Label	Etichetta
 	Labels…	Etichette…
@@ -270,7 +266,6 @@
 	Render Selection	Esegui rendering selezione
 	Replace Fonts in Projects…	Sostituisci font nei progetti…
 	Replace With Clip	Sostituisci con clip
-	Report an Issue…	Segnala un problema…
 	Reset All Parameters	Reimposta tutti i parametri
 	Reset Duration	Reimposta durata
 	Reset to Saved Layout	Ripristina layout salvato
@@ -371,7 +366,6 @@
 	Master volume: use the Audio Track Mixer	Volume master: usa il Mixer tracce audio
 	Search	Cerca
 	Quick Export	Esportazione rapida
-	Join the ArtCraft Discord (discord.gg/artcraft)	Unisciti al Discord di ArtCraft (discord.gg/artcraft)
 	Cancel	Annulla
 	OK	OK
 	Interpret Footage	Interpreta metraggio
@@ -415,9 +409,6 @@
 	Delete Empty Caption Tracks	Elimina tracce sottotitoli vuote
 	Version {version}	Versione {version}
 	A clean-room, pure-Rust non-linear video editor. Part of the ArtCraft family.	Un editor video non lineare clean-room, interamente in Rust. Parte della famiglia ArtCraft.
-	Join the ArtCraft Discord	Unisciti al Discord di ArtCraft
-	Source code on GitHub	Codice sorgente su GitHub
-	Report an issue	Segnala un problema
 	MIT OR Apache-2.0. Fonts: Inter, Noto Serif and JetBrains Mono (SIL OFL 1.1).	MIT OR Apache-2.0. Font: Inter, Noto Serif e JetBrains Mono (SIL OFL 1.1).
 	just now	proprio ora
 	{n} s ago	{n} s fa
@@ -455,8 +446,6 @@
 	A cut sequence with transitions, effects and music	Una sequenza montata con transizioni, effetti e musica
 	Bars and Tone	Barre e tono
 	SMPTE HD bars with 1 kHz reference tone	Barre SMPTE HD con tono di riferimento a 1 kHz
-	Community	Community
-	Join us on Discord	Unisciti a noi su Discord
 	OMF Export Settings	Impostazioni di esportazione OMF
 	AAF Export Settings	Impostazioni di esportazione AAF
 	OMF Title:	Titolo OMF:
@@ -2971,7 +2960,6 @@
 	Click to zoom in; Opt-click to zoom out.	Fai clic per ingrandire; Opt+clic per ridurre.
 	FilmCraft hit an error	FilmCraft ha riscontrato un errore
 	Details: {path}	Dettagli: {path}
-	Opened {url}	Aperto {url}
 	(empty)	(vuoto)
 	Step Back 1 Frame	Indietro di 1 fotogramma
 	Step Forward 1 Frame	Avanti di 1 fotogramma
@@ -3598,6 +3586,6 @@
 	Opens in your web browser: {url}	Si apre nel browser web: {url}
 	Saves this session's log and shows it in your file manager.	Salva il registro di questa sessione e lo mostra nel gestore file.
 	Shows a report on this computer.	Mostra un rapporto su questo computer.
-	Shows the version, community links and credits in a FilmCraft window.	Mostra la versione, i link della community e i riconoscimenti in una finestra di FilmCraft.
+	Shows the version and credits in a FilmCraft window.	Mostra la versione e i riconoscimenti in una finestra di FilmCraft.
 	Couldn't open your web browser	Impossibile aprire il browser web
 	Open this address in your browser yourself:	Apri tu questo indirizzo nel browser:
