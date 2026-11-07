@@ -132,17 +132,23 @@ pub fn handle(app: &mut FilmcraftApp, ctx: &egui::Context, req: &ControlRequest)
         })),
         "ui.ayp.tabs" => {
             use crate::ayp::tabs::{Kind, TABS};
-            ok(Value::Array(TABS.iter().map(|t| json!({
-                "id": t.id,
-                "label": t.label,
-                "items": t.items.iter().map(|i| json!({
-                    "key": i.key,
-                    "cmd": i.cmd,
-                    "params": serde_json::from_str::<Value>(i.params).unwrap_or(json!({})),
-                    "label": i.label,
-                    "kind": match i.kind { Kind::Run => "run", Kind::Panel => "panel", Kind::Ai => "ai" },
-                })).collect::<Vec<_>>(),
-            })).collect()))
+            ok(Value::Array(
+                TABS.iter()
+                    .map(|t| {
+                        json!({
+                            "id": t.id,
+                            "label": t.label,
+                            "items": t.items.iter().map(|i| json!({
+                                "key": i.key,
+                                "cmd": i.cmd,
+                                "params": serde_json::from_str::<Value>(i.params).unwrap_or(json!({})),
+                                "label": i.label,
+                                "kind": match i.kind { Kind::Run => "run", Kind::Panel => "panel", Kind::Ai => "ai" },
+                            })).collect::<Vec<_>>(),
+                        })
+                    })
+                    .collect(),
+            ))
         }
         "ui.ayp.open" => {
             let tab = s("tab");

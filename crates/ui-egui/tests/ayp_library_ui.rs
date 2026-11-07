@@ -317,7 +317,8 @@ fn a_working_click_clears_the_previous_reason() {
 fn voiceover_records_on_an_empty_audio_track() {
     let mut d = Driver::launch(true);
     let q = d.exec("sequence.inspect", json!({}))["result"].clone();
-    let busy: Vec<u64> = q["audio"].as_array().unwrap().iter().filter(|t| !t["items"].as_array().unwrap().is_empty()).map(|t| t["id"].as_u64().unwrap()).collect();
+    let busy: Vec<u64> =
+        q["audio"].as_array().unwrap().iter().filter(|t| !t["items"].as_array().unwrap().is_empty()).map(|t| t["id"].as_u64().unwrap()).collect();
     assert!(!busy.is_empty());
     d.click("ayp.tab.media");
     d.click("ayp.item.audio.voiceover.start");

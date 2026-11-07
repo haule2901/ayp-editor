@@ -915,7 +915,6 @@ mod tests {
 
     use super::*;
 
-
     #[test]
     fn split_first_never_panics_on_tiny_areas() {
         let split_first = |size: SplitSize, avail: f32| {

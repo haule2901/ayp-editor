@@ -27,15 +27,8 @@ pub struct Hit {
 /// Lower-case and strip Vietnamese marks: "Xoá khoảng lặng Đ" -> "xoa khoang lang d".
 /// Hand-written table (no crate); decomposed input (base letter + combining mark) folds too.
 pub fn fold(s: &str) -> String {
-    const GROUPS: [(&str, char); 7] = [
-        ("àáảãạăằắẳẵặâầấẩẫậ", 'a'),
-        ("èéẻẽẹêềếểễệ", 'e'),
-        ("ìíỉĩị", 'i'),
-        ("òóỏõọôồốổỗộơờớởỡợ", 'o'),
-        ("ùúủũụưừứửữự", 'u'),
-        ("ỳýỷỹỵ", 'y'),
-        ("đ", 'd'),
-    ];
+    const GROUPS: [(&str, char); 7] =
+        [("àáảãạăằắẳẵặâầấẩẫậ", 'a'), ("èéẻẽẹêềếểễệ", 'e'), ("ìíỉĩị", 'i'), ("òóỏõọôồốổỗộơờớởỡợ", 'o'), ("ùúủũụưừứửữự", 'u'), ("ỳýỷỹỵ", 'y'), ("đ", 'd')];
     s.chars()
         .flat_map(char::to_lowercase)
         .filter(|c| !('\u{0300}'..='\u{036F}').contains(c))
@@ -117,7 +110,8 @@ fn candidates(app: &FilmcraftApp) -> Vec<Cand> {
         }
     }
     let covered: Vec<&str> = out.iter().map(|c| c.id).chain(twins).collect();
-    let engine: Vec<_> = filmcraft_engine::command_specs().iter().filter(|c| !covered.contains(&c.id)).map(|c| (c.id, c.label, (c.enabled)(&app.session), true)).collect();
+    let engine: Vec<_> =
+        filmcraft_engine::command_specs().iter().filter(|c| !covered.contains(&c.id)).map(|c| (c.id, c.label, (c.enabled)(&app.session), true)).collect();
     let ui: Vec<_> = crate::menus::UI_COMMANDS.iter().filter(|c| !covered.contains(&c.id)).map(|c| (c.id, c.label, Ok(()), !c.menu.is_empty())).collect();
     for (id, en, enabled, in_menu) in engine.into_iter().chain(ui) {
         let label = if vi::has(en) { vi::vi(en).to_string() } else { en.to_string() };
@@ -160,7 +154,15 @@ pub fn search(app: &FilmcraftApp, query: &str, limit: usize) -> Vec<Hit> {
                 // the phrase against the best of the Vietnamese labels and the synonyms
                 let bonus = |f: &String, (exact, prefix, inside): (i32, i32, i32)| {
                     let f = f.trim();
-                    if f == phrase { exact } else if f.starts_with(&phrase) { prefix } else if f.contains(&phrase) { inside } else { 0 }
+                    if f == phrase {
+                        exact
+                    } else if f.starts_with(&phrase) {
+                        prefix
+                    } else if f.contains(&phrase) {
+                        inside
+                    } else {
+                        0
+                    }
                 };
                 score += labels.iter().map(|l| bonus(l, (140, 40, 30))).chain(syn.iter().map(|s| bonus(s, (120, 35, 25)))).max().unwrap_or(0);
             }
@@ -224,7 +226,10 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) {
         sel = sel.saturating_sub(1);
     }
     sel = sel.min(hits.len().saturating_sub(1));
-    if enter && !query.trim().is_empty() && let Some(h) = hits.get(sel) {
+    if enter
+        && !query.trim().is_empty()
+        && let Some(h) = hits.get(sel)
+    {
         run(app, ctx, h);
         return;
     }
@@ -257,7 +262,13 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) {
                 let why = h.enabled.as_ref().err().map(|w| p.layout_no_wrap(vi::reason(w), FontId::proportional(12.0), t.text_dim));
                 let why_w = why.as_ref().map_or(0.0, |g| g.size().x + 16.0);
                 let left = rect.with_max_x(rect.right() - why_w);
-                p.with_clip_rect(left).text(rect.left_top() + vec2(10.0, 27.0), Align2::LEFT_TOP, format!("{} · {}", h.label_en, h.id), FontId::proportional(11.0), t.text_faint);
+                p.with_clip_rect(left).text(
+                    rect.left_top() + vec2(10.0, 27.0),
+                    Align2::LEFT_TOP,
+                    format!("{} · {}", h.label_en, h.id),
+                    FontId::proportional(11.0),
+                    t.text_faint,
+                );
                 if let Some(g) = why {
                     p.galley(egui::pos2(rect.right() - g.size().x - 10.0, rect.top() + 26.0), g, t.text_dim);
                 }

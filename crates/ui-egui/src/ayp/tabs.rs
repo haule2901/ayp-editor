@@ -55,83 +55,132 @@ const fn ai(cmd: &'static str, label: &'static str) -> Item {
 const TRANSCRIBE_VI: &str = r#"{"model":"whisper-large-v3-turbo","language":"vi"}"#;
 
 pub const TABS: &[Tab] = &[
-    Tab { id: "media", icon: Icon::Folder, label: "Phương tiện", embed: Some(PanelKind::Project), items: &[
-        c("file.import", "Nhập tệp…"),
-        c("audio.voiceover.start", "Bắt đầu ghi âm lời"),
-        c("audio.voiceover.stop", "Dừng ghi âm"),
-        c("file.exportMedia", "Xuất video…"),
-        c("export.queue.add", "Thêm vào hàng đợi xuất"),
-    ]},
-    Tab { id: "audio", icon: Icon::Speaker, label: "Âm thanh", embed: Some(PanelKind::EssentialSound), items: &[
-        c("clip.extractAudio", "Tách âm thanh"),
-        it("effects.apply", r#"{"effect":"denoise"}"#, "Giảm ồn", "effects.apply.denoise"),
-        it("effects.apply", r#"{"effect":"speech_enhance"}"#, "Làm rõ giọng", "effects.apply.speech_enhance"),
-        c("essentialSound.autoMatch", "Chuẩn hoá âm lượng"),
-        c("essentialSound.generateDucking", "Nhạc nền tự nhỏ khi có lời"),
-        it("sequence.applyAudioTransition", r#"{"effect":"constant_power","frames":24,"edge":"in"}"#, "Rõ dần", "audio.fadeIn"),
-        it("sequence.applyAudioTransition", r#"{"effect":"constant_power","frames":24,"edge":"out"}"#, "Mờ dần", "audio.fadeOut"),
-    ]},
-    Tab { id: "text", icon: Icon::Type, label: "Văn bản", embed: Some(PanelKind::EssentialGraphics), items: &[
-        Item { then: &[("graphics.set", r#"{"props":{"font_style":"SemiBold","tracking":-60}}"#)], ..it("graphics.newText", r#"{"text":"Chữ mới","font":"Be Vietnam Pro"}"#, "Thêm chữ", "graphics.newText") },
-        it("graphics.set", r#"{"props":{"font":"Be Vietnam Pro","font_style":"SemiBold","tracking":-60}}"#, "Kiểu chữ AYP (giãn −60)", "graphics.set"),
-    ]},
-    Tab { id: "captions", icon: Icon::Captions, label: "Phụ đề", embed: Some(PanelKind::Text), items: &[
-        it("transcript.generate", TRANSCRIBE_VI, "Chép lời (tiếng Việt)", "captions.transcribe"),
-        c("transcript.createCaptionsVi", "Phụ đề tiếng Việt…"),
-        ai("transcript.captionsFromChunks", "Chia cụm phụ đề theo nghĩa (AI)"),
-        panel("captions.applyPreset", "Kiểu phụ đề lưu sẵn"),
-    ]},
-    Tab { id: "cut", icon: Icon::Razor, label: "Cắt bằng chữ", embed: Some(PanelKind::Text), items: &[
-        it("transcript.generate", TRANSCRIBE_VI, "Chép lời (tiếng Việt)", "transcript.generate"),
-        c("transcript.removePauses", "Xoá khoảng lặng"),
-        // The engine's default list is English only ("um", "uh"…): add the Vietnamese hesitation sounds.
-        // Words that also carry meaning (à, ừ, thì, kiểu…) are left to the editor. Trade-off: "ờ" / "ơ" are
-        // also a soft "yes" or a call ("ơ kìa") now and then; the ASR rarely writes them that way, and an
-        // editor who needs one back undoes the step.
-        it(
-            "transcript.removeFillers",
-            r#"{"fillers":["ờ","ơ","ờm","ừm","ừmm","ùm","ưm","hừm","hm","um","uh","umm","uhm","erm","er","ah","hmm","mm","mhm"]}"#,
-            "Xoá từ đệm",
-            "transcript.removeFillers",
-        ),
-        c("transcript.lift", "Xoá chữ chọn (để lại khoảng trống)"),
-        c("transcript.extract", "Xoá chữ chọn (kéo khít)"),
-        c("markers.add", "Thêm marker"),
-        c("multicam.cutToCamera1", "Cắt sang camera 1"),
-        c("multicam.cutToCamera2", "Cắt sang camera 2"),
-    ]},
-    Tab { id: "voice", icon: Icon::Mic, label: "Giọng đọc", embed: Some(PanelKind::TextToSpeech), items: &[
-        panel("tts.create", "Tạo giọng đọc"),
-    ]},
-    Tab { id: "effects", icon: Icon::Fx, label: "Hiệu ứng", embed: Some(PanelKind::Effects), items: &[
-        it("effects.apply", r#"{"effect":"skin_smooth"}"#, "Làm mịn da", "effects.apply.skin_smooth"),
-        c("clip.speedDuration", "Tốc độ / đảo ngược…"),
-        it("effects.apply", r#"{"effect":"gaussian_blur"}"#, "Làm mờ", "effects.apply.gaussian_blur"),
-        it("effects.apply", r#"{"effect":"warp_stabilizer"}"#, "Chống rung", "effects.apply.warp_stabilizer"),
-        it("effects.apply", r#"{"effect":"auto_reframe"}"#, "Tự khung hình 9:16", "effects.apply.auto_reframe"),
-        it("effects.apply", r#"{"effect":"ultra_key"}"#, "Xoá phông xanh", "effects.apply.ultra_key"),
-        it("effects.apply", r#"{"effect":"horizontal_flip"}"#, "Lật ngang", "effects.apply.horizontal_flip"),
-        it("effects.apply", r#"{"effect":"crop"}"#, "Cắt khung", "effects.apply.crop"),
-        c("clip.frameHold", "Dừng hình"),
-        it("masks.add", r#"{"effect":"opacity","shape":"ellipse"}"#, "Tạo mặt nạ", "masks.add"),
-        c("masks.track", "Mặt nạ bám theo vật"),
-        c("clip.nest", "Gộp thành nest…"),
-        c("clip.group", "Nhóm clip"),
-    ]},
-    Tab { id: "transitions", icon: Icon::Slide, label: "Chuyển tiếp", embed: Some(PanelKind::Effects), items: &[
-        it("sequence.applyVideoTransition", r#"{"effect":"cross_dissolve","frames":12}"#, "Chuyển cảnh mờ", "sequence.applyVideoTransition"),
-    ]},
-    Tab { id: "color", icon: Icon::Adjust, label: "Màu", embed: Some(PanelKind::LumetriColor), items: &[
-        panel("lumetri.applyPreset", "Bộ lọc màu"),
-        panel("lut.import", "Nhập LUT"),
-        panel("lumetri.applyMatch", "Khớp màu"),
-    ]},
+    Tab {
+        id: "media",
+        icon: Icon::Folder,
+        label: "Phương tiện",
+        embed: Some(PanelKind::Project),
+        items: &[
+            c("file.import", "Nhập tệp…"),
+            c("audio.voiceover.start", "Bắt đầu ghi âm lời"),
+            c("audio.voiceover.stop", "Dừng ghi âm"),
+            c("file.exportMedia", "Xuất video…"),
+            c("export.queue.add", "Thêm vào hàng đợi xuất"),
+        ],
+    },
+    Tab {
+        id: "audio",
+        icon: Icon::Speaker,
+        label: "Âm thanh",
+        embed: Some(PanelKind::EssentialSound),
+        items: &[
+            c("clip.extractAudio", "Tách âm thanh"),
+            it("effects.apply", r#"{"effect":"denoise"}"#, "Giảm ồn", "effects.apply.denoise"),
+            it("effects.apply", r#"{"effect":"speech_enhance"}"#, "Làm rõ giọng", "effects.apply.speech_enhance"),
+            c("essentialSound.autoMatch", "Chuẩn hoá âm lượng"),
+            c("essentialSound.generateDucking", "Nhạc nền tự nhỏ khi có lời"),
+            it("sequence.applyAudioTransition", r#"{"effect":"constant_power","frames":24,"edge":"in"}"#, "Rõ dần", "audio.fadeIn"),
+            it("sequence.applyAudioTransition", r#"{"effect":"constant_power","frames":24,"edge":"out"}"#, "Mờ dần", "audio.fadeOut"),
+        ],
+    },
+    Tab {
+        id: "text",
+        icon: Icon::Type,
+        label: "Văn bản",
+        embed: Some(PanelKind::EssentialGraphics),
+        items: &[
+            Item {
+                then: &[("graphics.set", r#"{"props":{"font_style":"SemiBold","tracking":-60}}"#)],
+                ..it("graphics.newText", r#"{"text":"Chữ mới","font":"Be Vietnam Pro"}"#, "Thêm chữ", "graphics.newText")
+            },
+            it("graphics.set", r#"{"props":{"font":"Be Vietnam Pro","font_style":"SemiBold","tracking":-60}}"#, "Kiểu chữ AYP (giãn −60)", "graphics.set"),
+        ],
+    },
+    Tab {
+        id: "captions",
+        icon: Icon::Captions,
+        label: "Phụ đề",
+        embed: Some(PanelKind::Text),
+        items: &[
+            it("transcript.generate", TRANSCRIBE_VI, "Chép lời (tiếng Việt)", "captions.transcribe"),
+            c("transcript.createCaptionsVi", "Phụ đề tiếng Việt…"),
+            ai("transcript.captionsFromChunks", "Chia cụm phụ đề theo nghĩa (AI)"),
+            panel("captions.applyPreset", "Kiểu phụ đề lưu sẵn"),
+        ],
+    },
+    Tab {
+        id: "cut",
+        icon: Icon::Razor,
+        label: "Cắt bằng chữ",
+        embed: Some(PanelKind::Text),
+        items: &[
+            it("transcript.generate", TRANSCRIBE_VI, "Chép lời (tiếng Việt)", "transcript.generate"),
+            c("transcript.removePauses", "Xoá khoảng lặng"),
+            // The engine's default list is English only ("um", "uh"…): add the Vietnamese hesitation sounds.
+            // Words that also carry meaning (à, ừ, thì, kiểu…) are left to the editor. Trade-off: "ờ" / "ơ" are
+            // also a soft "yes" or a call ("ơ kìa") now and then; the ASR rarely writes them that way, and an
+            // editor who needs one back undoes the step.
+            it(
+                "transcript.removeFillers",
+                r#"{"fillers":["ờ","ơ","ờm","ừm","ừmm","ùm","ưm","hừm","hm","um","uh","umm","uhm","erm","er","ah","hmm","mm","mhm"]}"#,
+                "Xoá từ đệm",
+                "transcript.removeFillers",
+            ),
+            c("transcript.lift", "Xoá chữ chọn (để lại khoảng trống)"),
+            c("transcript.extract", "Xoá chữ chọn (kéo khít)"),
+            c("markers.add", "Thêm marker"),
+            c("multicam.cutToCamera1", "Cắt sang camera 1"),
+            c("multicam.cutToCamera2", "Cắt sang camera 2"),
+        ],
+    },
+    Tab { id: "voice", icon: Icon::Mic, label: "Giọng đọc", embed: Some(PanelKind::TextToSpeech), items: &[panel("tts.create", "Tạo giọng đọc")] },
+    Tab {
+        id: "effects",
+        icon: Icon::Fx,
+        label: "Hiệu ứng",
+        embed: Some(PanelKind::Effects),
+        items: &[
+            it("effects.apply", r#"{"effect":"skin_smooth"}"#, "Làm mịn da", "effects.apply.skin_smooth"),
+            c("clip.speedDuration", "Tốc độ / đảo ngược…"),
+            it("effects.apply", r#"{"effect":"gaussian_blur"}"#, "Làm mờ", "effects.apply.gaussian_blur"),
+            it("effects.apply", r#"{"effect":"warp_stabilizer"}"#, "Chống rung", "effects.apply.warp_stabilizer"),
+            it("effects.apply", r#"{"effect":"auto_reframe"}"#, "Tự khung hình 9:16", "effects.apply.auto_reframe"),
+            it("effects.apply", r#"{"effect":"ultra_key"}"#, "Xoá phông xanh", "effects.apply.ultra_key"),
+            it("effects.apply", r#"{"effect":"horizontal_flip"}"#, "Lật ngang", "effects.apply.horizontal_flip"),
+            it("effects.apply", r#"{"effect":"crop"}"#, "Cắt khung", "effects.apply.crop"),
+            c("clip.frameHold", "Dừng hình"),
+            it("masks.add", r#"{"effect":"opacity","shape":"ellipse"}"#, "Tạo mặt nạ", "masks.add"),
+            c("masks.track", "Mặt nạ bám theo vật"),
+            c("clip.nest", "Gộp thành nest…"),
+            c("clip.group", "Nhóm clip"),
+        ],
+    },
+    Tab {
+        id: "transitions",
+        icon: Icon::Slide,
+        label: "Chuyển tiếp",
+        embed: Some(PanelKind::Effects),
+        items: &[it("sequence.applyVideoTransition", r#"{"effect":"cross_dissolve","frames":12}"#, "Chuyển cảnh mờ", "sequence.applyVideoTransition")],
+    },
+    Tab {
+        id: "color",
+        icon: Icon::Adjust,
+        label: "Màu",
+        embed: Some(PanelKind::LumetriColor),
+        items: &[panel("lumetri.applyPreset", "Bộ lọc màu"), panel("lut.import", "Nhập LUT"), panel("lumetri.applyMatch", "Khớp màu")],
+    },
     // ponytail: plain blur only; the keyframed blur-in/out version is deferred to plan 3.
-    Tab { id: "motion", icon: Icon::Sparkle, label: "Motion AYP", embed: None, items: &[
-        it("effects.apply", r#"{"effect":"gaussian_blur"}"#, "Làm mờ cả clip (nền cho minh hoạ)", "motion.blur"),
-        c("review.open", "Duyệt góp ý…"),
-        c("review.import", "Góp ý thành marker"),
-    ]},
+    Tab {
+        id: "motion",
+        icon: Icon::Sparkle,
+        label: "Motion AYP",
+        embed: None,
+        items: &[
+            it("effects.apply", r#"{"effect":"gaussian_blur"}"#, "Làm mờ cả clip (nền cho minh hoạ)", "motion.blur"),
+            c("review.open", "Duyệt góp ý…"),
+            c("review.import", "Góp ý thành marker"),
+        ],
+    },
 ];
 
 /// First tab/item that runs `cmd` (items with parameters of their own share a command id).
@@ -153,11 +202,7 @@ mod tests {
     fn every_item_is_a_real_command_with_json_params() {
         for t in TABS {
             for i in t.items {
-                assert!(
-                    filmcraft_engine::find_command(i.cmd).is_some() || crate::menus::UI_COMMANDS.iter().any(|u| u.id == i.cmd),
-                    "{}",
-                    i.cmd
-                );
+                assert!(filmcraft_engine::find_command(i.cmd).is_some() || crate::menus::UI_COMMANDS.iter().any(|u| u.id == i.cmd), "{}", i.cmd);
                 let v = serde_json::from_str::<serde_json::Value>(i.params).unwrap_or_else(|e| panic!("{}: {e}", i.cmd));
                 assert!(v.is_object(), "{}", i.cmd);
             }
@@ -190,12 +235,35 @@ mod tests {
     #[test]
     fn the_41_features_are_placed() {
         for c in [
-            "file.import", "audio.voiceover.start", "clip.extractAudio", "essentialSound.autoMatch", "essentialSound.generateDucking",
-            "graphics.newText", "transcript.createCaptionsVi", "transcript.captionsFromChunks", "captions.applyPreset",
-            "transcript.removePauses", "transcript.removeFillers", "transcript.lift", "tts.create",
-            "sequence.applyVideoTransition", "lumetri.applyPreset", "lut.import", "lumetri.applyMatch", "clip.speedDuration",
-            "clip.frameHold", "masks.add", "masks.track", "clip.nest", "clip.group", "multicam.cutToCamera1", "markers.add", "review.open",
-            "review.import", "file.exportMedia", "export.queue.add",
+            "file.import",
+            "audio.voiceover.start",
+            "clip.extractAudio",
+            "essentialSound.autoMatch",
+            "essentialSound.generateDucking",
+            "graphics.newText",
+            "transcript.createCaptionsVi",
+            "transcript.captionsFromChunks",
+            "captions.applyPreset",
+            "transcript.removePauses",
+            "transcript.removeFillers",
+            "transcript.lift",
+            "tts.create",
+            "sequence.applyVideoTransition",
+            "lumetri.applyPreset",
+            "lut.import",
+            "lumetri.applyMatch",
+            "clip.speedDuration",
+            "clip.frameHold",
+            "masks.add",
+            "masks.track",
+            "clip.nest",
+            "clip.group",
+            "multicam.cutToCamera1",
+            "markers.add",
+            "review.open",
+            "review.import",
+            "file.exportMedia",
+            "export.queue.add",
         ] {
             assert!(find_cmd(c).is_some(), "{c} không nằm ở thẻ nào");
         }

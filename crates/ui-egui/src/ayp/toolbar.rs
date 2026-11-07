@@ -30,8 +30,20 @@ fn button(app: &mut FilmcraftApp, ui: &mut egui::Ui, ctx: &egui::Context, r: Rec
     } else if resp.hovered() {
         ui.painter().rect_filled(r, 6.0, t.hover);
     }
-    let ink = if accent || on { egui::Color32::WHITE } else if live { t.text } else { t.text_dim };
-    let icon = if accent || on { egui::Color32::WHITE } else if live { t.icon } else { t.text_dim };
+    let ink = if accent || on {
+        egui::Color32::WHITE
+    } else if live {
+        t.text
+    } else {
+        t.text_dim
+    };
+    let icon = if accent || on {
+        egui::Color32::WHITE
+    } else if live {
+        t.icon
+    } else {
+        t.text_dim
+    };
     crate::icons::paint(ui.painter(), Rect::from_center_size(egui::pos2(r.left() + 16.0, r.center().y), vec2(16.0, 16.0)), b.3, icon);
     if label {
         ui.painter().text(egui::pos2(r.left() + 29.0, r.center().y), egui::Align2::LEFT_CENTER, b.0, egui::FontId::proportional(12.5), ink);

@@ -37,14 +37,8 @@ pub fn synonyms(english: &str) -> Vec<&'static str> {
 
 /// Explain an engine error in Vietnamese; unknown errors are returned unchanged.
 pub fn reason(engine_error: &str) -> String {
-    let rows = ERR.get_or_init(|| {
-        crate::i18n::catalog::parse_entries(TSV)
-            .0
-            .into_iter()
-            .filter(|(c, _, _)| c == "err")
-            .map(|(_, s, t)| (s.to_lowercase(), t))
-            .collect()
-    });
+    let rows = ERR
+        .get_or_init(|| crate::i18n::catalog::parse_entries(TSV).0.into_iter().filter(|(c, _, _)| c == "err").map(|(_, s, t)| (s.to_lowercase(), t)).collect());
     let low = engine_error.to_lowercase();
     rows.iter().filter(|(s, _)| low.contains(s.as_str())).max_by_key(|(s, _)| s.len()).map(|(_, t)| t.clone()).unwrap_or_else(|| engine_error.to_string())
 }
@@ -75,7 +69,9 @@ mod tests {
     fn reasons_do_not_repeat_the_prefix_the_panel_adds() {
         // the panel shows "Chưa làm được: <reason>"
         assert!(!reason("select clips first").starts_with("Chưa làm được"));
-        assert!(reason("invalid parameters for `essentialSound.generateDucking`: select Music or Ambience clips (ducking applies to those types)").contains("Nhạc"));
+        assert!(
+            reason("invalid parameters for `essentialSound.generateDucking`: select Music or Ambience clips (ducking applies to those types)").contains("Nhạc")
+        );
         assert!(reason("no multi-camera clip at the playhead").contains("đa camera"));
     }
     #[test]
@@ -84,11 +80,7 @@ mod tests {
     }
     #[test]
     fn every_menu_command_has_a_row() {
-        let missing: Vec<_> = filmcraft_engine::command_specs()
-            .iter()
-            .filter(|c| !c.menu.is_empty() && !has(c.label))
-            .map(|c| c.label)
-            .collect();
+        let missing: Vec<_> = filmcraft_engine::command_specs().iter().filter(|c| !c.menu.is_empty() && !has(c.label)).map(|c| c.label).collect();
         assert!(missing.is_empty(), "{missing:#?}");
     }
 }

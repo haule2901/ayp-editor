@@ -28,9 +28,8 @@ fn step(app: &mut FilmcraftApp, ctx: &egui::Context, cmd: &str, params: &str) ->
 
 /// The first empty, unlocked audio track of the open sequence; a new one at the bottom when none is empty.
 fn free_audio_track(app: &mut FilmcraftApp) -> Result<u64, String> {
-    let empty = |app: &FilmcraftApp| {
-        app.session.active_sequence().and_then(|q| q.audio_tracks.iter().find(|t| t.items.is_empty() && !t.locked).map(|t| t.id.0))
-    };
+    let empty =
+        |app: &FilmcraftApp| app.session.active_sequence().and_then(|q| q.audio_tracks.iter().find(|t| t.items.is_empty() && !t.locked).map(|t| t.id.0));
     if app.session.active_sequence().is_none() {
         return Err("no sequence is open".into());
     }
@@ -171,8 +170,13 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
         None => app.session.project.name.clone(),
     };
     let find_w = 92.0;
-    ui.put(Rect::from_min_size(head.min, vec2(head.width() - find_w - 4.0, head.height())), egui::Label::new(egui::RichText::new(title).strong().color(t.text)).truncate());
-    let find = ui.put(Rect::from_min_size(egui::pos2(head.right() - find_w, head.top()), vec2(find_w, head.height())), egui::Button::new("Tìm lệnh…")).on_hover_text("Tìm và chạy mọi lệnh (⌘⇧P)");
+    ui.put(
+        Rect::from_min_size(head.min, vec2(head.width() - find_w - 4.0, head.height())),
+        egui::Label::new(egui::RichText::new(title).strong().color(t.text)).truncate(),
+    );
+    let find = ui
+        .put(Rect::from_min_size(egui::pos2(head.right() - find_w, head.top()), vec2(find_w, head.height())), egui::Button::new("Tìm lệnh…"))
+        .on_hover_text("Tìm và chạy mọi lệnh (⌘⇧P)");
     app.auto.add_response("ayp.find", &find, "Tìm lệnh…");
     if find.clicked() {
         let _ = super::run(app, &ctx, "ayp.palette.open", "{}");

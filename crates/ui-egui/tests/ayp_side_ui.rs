@@ -5,8 +5,8 @@ use std::sync::mpsc::{Sender, channel};
 use egui_kittest::Harness;
 use filmcraft_engine::Session;
 use filmcraft_ui_egui::FilmcraftApp;
-use filmcraft_ui_egui::state::AypSideTab;
 use filmcraft_ui_egui::control::ControlRequest;
+use filmcraft_ui_egui::state::AypSideTab;
 use serde_json::{Value, json};
 
 struct Driver {

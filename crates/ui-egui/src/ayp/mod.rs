@@ -1,10 +1,10 @@
 //! AYPEditor's CapCut-style interface: Vietnamese catalog (`vi`) and, in later tasks, the panels.
-pub mod vi;
-pub mod tabs;
 pub mod library;
-pub mod side;
-pub mod toolbar;
 pub mod palette;
+pub mod side;
+pub mod tabs;
+pub mod toolbar;
+pub mod vi;
 
 /// Run a command the way an AYP button does: clear the reason an earlier click left, parse `params`,
 /// invoke; a failure is said on the status line as "Chưa làm được: <lý do>".
