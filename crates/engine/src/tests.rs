@@ -1161,3 +1161,35 @@ fn negative_place_and_marker_times_are_refused() {
     s.execute("markers.add", json!({"frame": 0, "name": "start"})).unwrap();
     assert!(s.active_sequence().unwrap().markers.iter().any(|m| m.start == Tick::ZERO && m.name == "start"));
 }
+
+#[test]
+fn failed_group_leaves_project_clean() {
+    let mut s = demo();
+    s.saved_revision = s.revision;
+    let (rev, undo) = (s.revision, s.history.undo.len());
+    let mark = s.group_begin();
+    assert!(s.execute("timeline.place", json!({"item": 0, "frame": -1})).is_err());
+    s.group_end(mark, "AI: x", false);
+    assert!(!s.is_dirty());
+    assert_eq!((s.revision, s.history.undo.len()), (rev, undo));
+    // a group that did change something and then failed is rolled back and does count as a change
+    let mark = s.group_begin();
+    s.execute("sequence.addTracks", json!({"video": 1})).unwrap();
+    s.group_end(mark, "AI: x", false);
+    assert_eq!(s.history.undo.len(), undo);
+    assert!(s.is_dirty());
+}
+
+#[test]
+fn history_group_commands() {
+    let mut s = demo();
+    let undo = s.history.undo.len();
+    s.execute("history.beginGroup", json!({})).unwrap();
+    assert!(s.execute("history.beginGroup", json!({})).is_err());
+    s.execute("sequence.addTracks", json!({"video": 1})).unwrap();
+    s.execute("sequence.addTracks", json!({"video": 1})).unwrap();
+    assert_eq!(s.execute("history.endGroup", json!({"label": "AI: thử"})).unwrap(), json!({"ok": true}));
+    assert!(s.execute("history.endGroup", json!({"label": "x"})).is_err());
+    assert_eq!(s.history.undo.len(), undo + 1);
+    assert_eq!(s.history.undo.last().map(|e| e.0.as_str()), Some("AI: thử"));
+}

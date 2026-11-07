@@ -200,6 +200,7 @@ impl Services for FsServices {
 pub struct UndoMark(Option<usize>);
 
 /// Where the project and history stood when a group of edits began ([`Session::group_begin`]).
+#[must_use = "every group_begin needs its group_end"]
 pub struct GroupMark {
     project: Arc<Project>,
     state: EditorState,
@@ -453,6 +454,8 @@ pub struct Session {
     pub browser: media_browser::BrowserState,
     /// Nesting depth of [`Session::execute`] (commands that run other commands).
     exec_depth: u32,
+    /// The group opened by `history.beginGroup`, closed by `history.endGroup`.
+    pub(crate) open_group: Option<GroupMark>,
     /// Each media file's size and modification time when last seen (Settings ▸ Media ▸
     /// Automatically refresh growing files, [`media_watch`]).
     pub media_stamps: std::collections::HashMap<String, media_watch::Stamp>,
@@ -548,6 +551,7 @@ impl Session {
             log: Default::default(),
             browser: Default::default(),
             exec_depth: 0,
+            open_group: None,
             media_stamps: Default::default(),
             media_scan: None,
         }
@@ -912,12 +916,16 @@ impl Session {
         let GroupMark { project, state, undo, redo, limit } = mark;
         self.history.limit = limit;
         if !ok {
+            // a group that changed nothing must not mark the project edited
+            let changed = !Arc::ptr_eq(&self.project, &project) || self.history.undo.len() != undo;
             self.history.undo.truncate(undo);
             self.history.redo = redo;
             self.history.merge_key = None;
             self.project = project;
             self.state = state;
-            self.bump();
+            if changed {
+                self.bump();
+            }
             return;
         }
         if let Some(first) = self.history.undo.get(undo).map(|e| e.1.clone()) {

@@ -3394,6 +3394,36 @@ fn build() -> Vec<CommandSpec> {
             r#"{"kind":"Video"|"Audio"|"VideoTransition"|"AudioTransition"?,"folder":"Video Transitions/Wipe"?,"detail":bool?}"#,
             |_, p| Ok(list_effects(p))
         ),
+        CommandSpec {
+            id: "history.beginGroup",
+            label: "Begin Undo Group",
+            menu: &[],
+            shortcut: None,
+            params: "{}",
+            enabled: always,
+            run: |s, _| {
+                if s.open_group.is_some() {
+                    return Err(EngineError::Other("a group is already open".into()));
+                }
+                s.open_group = Some(s.group_begin());
+                Ok(json!({"ok": true}))
+            },
+            journal: false,
+        },
+        CommandSpec {
+            id: "history.endGroup",
+            label: "End Undo Group",
+            menu: &[],
+            shortcut: None,
+            params: r#"{"label":str,"ok":bool?=true}"#,
+            enabled: always,
+            run: |s, p| {
+                let mark = s.open_group.take().ok_or_else(|| EngineError::Other("no group is open".into()))?;
+                s.group_end(mark, str_p(p, "label").unwrap_or("Edit"), bool_p(p, "ok").unwrap_or(true));
+                Ok(json!({"ok": true}))
+            },
+            journal: false,
+        },
         query!("history.list", "List History", "{}", |s, _| Ok(
             json!({"undo": s.history.undo.iter().map(|h| &h.0).collect::<Vec<_>>(), "redo": s.history.redo.iter().map(|h| &h.0).collect::<Vec<_>>()})
         )),
