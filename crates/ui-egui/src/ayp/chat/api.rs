@@ -2,10 +2,10 @@
 //! request and read the answer; `spawn` runs one request on a worker thread with retries.
 //! The key lives only in the `x-api-key` header: no error, log or Debug output carries it.
 use crate::{HttpPost, HttpRequest, HttpResponse};
-use serde_json::{json, Value};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{channel, Receiver};
+use serde_json::{Value, json};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{Receiver, channel};
 use std::time::Duration;
 
 pub const DEFAULT_MODEL: &str = "claude-sonnet-5-5";
@@ -246,11 +246,7 @@ mod tests {
         let post: HttpPost = Arc::new(move |_| {
             let mut n = c.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             *n += 1;
-            if *n <= fail_first {
-                Err("offline".into())
-            } else {
-                Ok(resp(200, None, r#"{"content":[],"stop_reason":"end_turn"}"#))
-            }
+            if *n <= fail_first { Err("offline".into()) } else { Ok(resp(200, None, r#"{"content":[],"stop_reason":"end_turn"}"#)) }
         });
         (post, calls)
     }

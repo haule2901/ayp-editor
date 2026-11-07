@@ -53,6 +53,8 @@ fn add_track(id: &str) -> Value {
 /// Poll (1 ms apart, at most ~2 s) until `done`.
 fn until(app: &mut FilmcraftApp, ctx: &egui::Context, done: impl Fn(&FilmcraftApp) -> bool) {
     for _ in 0..2000 {
+        // I1: the engine edit lock is on exactly while a turn runs
+        assert_eq!(app.session.edit_locked(), app.ayp_chat.busy(), "lock out of step; cards: {:?}", app.ayp_chat.cards);
         if done(app) {
             return;
         }
@@ -122,7 +124,10 @@ fn a_turn_runs_tools_and_is_one_undo_step() {
     let doing = cards.iter().find_map(|c| if let Card::Doing { steps } = c { Some(steps.clone()) } else { None }).unwrap();
     assert_eq!(doing, vec![(vi_add.clone(), Some(true)), (vi_add, Some(true)), ("no.such.command".into(), Some(false))]);
     assert_eq!(cards.iter().filter(|c| matches!(c, Card::Doing { .. })).count(), 1, "one Doing card per turn");
-    assert_eq!(cards[result_card(&app).unwrap()], Card::Result { label, commands: vec!["sequence.addTracks".into()], undo_len: before + 1, undone: false });
+    assert_eq!(
+        cards[result_card(&app).unwrap()],
+        Card::Result { label, commands: vec!["sequence.addTracks".into()], mark: app.session.undo_mark(), undone: false }
+    );
 }
 
 #[test]
@@ -416,7 +421,7 @@ fn opening_another_project_ends_the_turn() {
     let log = script(
         &mut app,
         vec![
-            reply("tool_use", json!([add_track("t1"), run_cmd("t2", "file.openDemoProject", json!({})), add_track("t3")])),
+            reply("tool_use", json!([run_cmd("t1", "sequence.inspect", json!({})), run_cmd("t2", "file.openDemoProject", json!({})), add_track("t3")])),
             reply("end_turn", json!([text("Ok.")])),
         ],
     );
@@ -429,13 +434,11 @@ fn opening_another_project_ends_the_turn() {
     assert_eq!(app.session.history.limit, 200);
     assert!(result_card(&app).is_none());
 
+    // the next message starts a new conversation: nothing of the old project's goes with it
     send(&mut app, "tiếp").unwrap();
     settle(&mut app, &ctx);
-    let c = last_user_content(&log.lock().unwrap()[1]);
-    let ids: Vec<&str> = c.as_array().unwrap().iter().filter_map(|r| r["tool_use_id"].as_str()).collect();
-    assert_eq!(ids, ["t1", "t2", "t3"]);
-    assert_eq!(c[2]["content"], "Người dùng đã dừng");
-    assert_eq!(c[3], text("tiếp"));
+    assert_eq!(app.ayp_chat.cards[0], Card::Text("Đã mở project khác — bắt đầu cuộc trò chuyện mới".into()));
+    assert_eq!(messages(&log.lock().unwrap()[1]), &vec![json!({"role": "user", "content": [text("tiếp")]})]);
 }
 
 #[test]
@@ -485,4 +488,181 @@ fn the_ai_cannot_group_or_undo_inside_its_turn() {
     }
     assert_ne!(app.session.history.limit, usize::MAX, "no group outlives the turn");
     assert!(app.session.execute("history.endGroup", json!({"label": "x"})).is_err(), "no group was left open");
+}
+
+/// The first request waits until the returned sender fires (or is dropped).
+fn hold_first(app: &mut FilmcraftApp) -> std::sync::mpsc::Sender<()> {
+    let (go, wait) = std::sync::mpsc::channel::<()>();
+    let wait = Mutex::new(Some(wait));
+    let inner = app.hooks.http_post.take().unwrap();
+    app.hooks.http_post = Some(Arc::new(move |req| {
+        if let Some(w) = wait.lock().unwrap().take() {
+            let _ = w.recv();
+        }
+        inner(req)
+    }));
+    go
+}
+
+/// I1 / M3: while a turn runs, an edit straight to `Session::execute` (the Thông số controls do
+/// that) and a history group over MCP are refused; reads run; Dừng lifts the lock.
+#[test]
+fn the_project_is_locked_for_the_whole_turn() {
+    let (mut app, ctx) = demo();
+    script(&mut app, vec![reply("end_turn", json!([text("Xong.")]))]);
+    let gate = hold_first(&mut app);
+    let (project, undo) = (app.session.project.clone(), app.session.history.undo.len());
+    send(&mut app, "Làm gì đó").unwrap();
+    assert!(app.ayp_chat.busy());
+    for (id, p) in [("sequence.addTracks", json!({"video": 1, "audio": 0})), ("history.beginGroup", json!({})), ("history.endGroup", json!({"label": "x"}))] {
+        let e = app.session.execute(id, p).map(|_| ()).map_err(|e| e.to_string());
+        assert_eq!(e, Err(BUSY.to_string()), "{id}");
+    }
+    assert!(app.session.execute("sequence.inspect", json!({})).is_ok(), "reads still run");
+    assert!(crate::menus::invoke(&mut app, &ctx, "sequence.addTracks", json!({"video": 1, "audio": 0})).is_err());
+    assert!(Arc::ptr_eq(&app.session.project, &project) && app.session.history.undo.len() == undo, "project unchanged");
+    stop(&mut app);
+    assert!(!app.ayp_chat.busy() && !app.session.edit_locked(), "Dừng lifts the lock");
+    drop(gate);
+    app.session.execute("sequence.addTracks", json!({"video": 1, "audio": 0})).unwrap();
+}
+
+/// I2: the AI never throws away unsaved work: no opening, creating, reverting or closing projects
+/// over a dirty one, and never discarding the crash recovery.
+#[test]
+fn the_ai_cannot_drop_unsaved_work() {
+    let (mut app, ctx) = demo();
+    crate::menus::invoke(&mut app, &ctx, "sequence.addTracks", json!({"video": 1, "audio": 0})).unwrap();
+    assert!(app.session.is_dirty());
+    let ids = [
+        ("file.newProject", json!({"name": "x"})),
+        ("file.newProjectFromTemplate", json!({"template": "x", "force": true})),
+        ("file.openDemoProject", json!({})),
+        ("file.open", json!({"path": "/nope.fcproj"})),
+        ("file.openRecent.0", json!({})),
+        ("file.revert", json!({})),
+        ("file.closeProject", json!({"force": true})),
+        ("file.recover", json!({})),
+        ("file.discardRecovery", json!({})),
+    ];
+    let calls: Vec<Value> = ids.iter().enumerate().map(|(i, (id, p))| run_cmd(&format!("f{i}"), id, p.clone())).collect();
+    let log = script(&mut app, vec![reply("tool_use", json!(calls)), reply("end_turn", json!([text("Ok.")]))]);
+    let project = app.session.project.clone();
+    send(&mut app, "Mở project mới").unwrap();
+    settle(&mut app, &ctx);
+    let results = last_user_content(&log.lock().unwrap()[1]);
+    for (i, r) in results.as_array().unwrap().iter().enumerate() {
+        assert_eq!(r["is_error"], true, "{}", ids[i].0);
+    }
+    assert_eq!(results[0]["content"], "Lưu project trước khi mở hoặc tạo project khác");
+    assert!(Arc::ptr_eq(&app.session.project, &project), "the project is untouched");
+}
+
+/// I3: a turn whose commands succeed but change nothing has no Result card.
+#[test]
+fn a_turn_that_changed_nothing_has_no_result_card() {
+    let (mut app, ctx) = demo();
+    script(&mut app, vec![reply("tool_use", json!([run_cmd("d1", "edit.deselectAll", json!({}))])), reply("end_turn", json!([text("Xong.")]))]);
+    let undo = app.session.history.undo.len();
+    send(&mut app, "Bỏ chọn").unwrap();
+    settle(&mut app, &ctx);
+    assert_eq!(app.session.history.undo.len(), undo);
+    assert!(result_card(&app).is_none(), "{:?}", app.ayp_chat.cards);
+}
+
+/// I4: the card waiting for an answer is the plan, even when cards follow it.
+#[test]
+fn the_waiting_card_is_the_plan_even_with_cards_after_it() {
+    let (mut app, ctx) = demo();
+    let plan = tool_use("p1", "propose_plan", json!({"title": "T", "steps": ["a"]}));
+    script(&mut app, vec![reply("tool_use", json!([add_track("t1"), plan]))]);
+    send(&mut app, "Thêm track rồi lập kế hoạch").unwrap();
+    settle(&mut app, &ctx);
+    let plan_card = app.ayp_chat.cards.iter().position(|c| matches!(c, Card::Plan { .. })).unwrap();
+    assert!(plan_card + 1 < app.ayp_chat.cards.len(), "a Result card follows the plan");
+    assert_eq!(app.ayp_chat.waiting_card(), Some(plan_card));
+    app.hooks.http_post = None;
+    decide_plan(&mut app, true).unwrap();
+    assert!(matches!(app.ayp_chat.cards.last(), Some(Card::Error(_))));
+    assert_eq!(app.ayp_chat.waiting_card(), Some(plan_card), "offline: the plan still waits");
+}
+
+/// I5: Trò chuyện mới starts over; the next request carries only the new message.
+#[test]
+fn a_new_conversation_forgets_the_old_one() {
+    let (mut app, ctx) = demo();
+    let log = script(&mut app, vec![reply("end_turn", json!([text("Một.")])), reply("end_turn", json!([text("Hai.")]))]);
+    send(&mut app, "một").unwrap();
+    settle(&mut app, &ctx);
+    new_conversation(&mut app).unwrap();
+    assert!(app.ayp_chat.cards.is_empty());
+    send(&mut app, "hai").unwrap();
+    settle(&mut app, &ctx);
+    let log = log.lock().unwrap();
+    assert_eq!(messages(&log[1]), &vec![json!({"role": "user", "content": [text("hai")]})]);
+}
+
+/// I5: a stop reason the chat does not handle ends the turn with a card that says what to do.
+#[test]
+fn an_unknown_stop_reason_shows_an_error() {
+    let (mut app, ctx) = demo();
+    script(&mut app, vec![reply("model_context_window_exceeded", json!([text("…")])), reply("pause_turn", json!([text("…")]))]);
+    for m in ["một", "hai"] {
+        send(&mut app, m).unwrap();
+        settle(&mut app, &ctx);
+        assert_eq!(app.ayp_chat.cards.last(), Some(&Card::Error("Cuộc trò chuyện quá dài hoặc bị ngắt — bấm Trò chuyện mới".into())));
+    }
+}
+
+/// I5: opening another project starts a new conversation, with a note saying so.
+#[test]
+fn opening_another_project_starts_a_new_conversation() {
+    let (mut app, ctx) = demo();
+    let log = script(&mut app, vec![reply("end_turn", json!([text("Một.")])), reply("end_turn", json!([text("Hai.")]))]);
+    send(&mut app, "một").unwrap();
+    settle(&mut app, &ctx);
+    app.session.execute("file.openDemoProject", json!({})).unwrap();
+    poll(&mut app, &ctx);
+    assert_eq!(app.ayp_chat.cards, vec![Card::Text("Đã mở project khác — bắt đầu cuộc trò chuyện mới".into())]);
+    send(&mut app, "hai").unwrap();
+    settle(&mut app, &ctx);
+    assert_eq!(messages(&log.lock().unwrap()[1]).len(), 1);
+}
+
+/// I7: the key never shows in a request's Debug output.
+#[test]
+fn a_request_does_not_debug_print_the_key() {
+    let req = HttpRequest { url: api::URL.into(), headers: api::headers("sk-ant-secret-42"), body: "{}".into() };
+    let d = format!("{req:?}");
+    assert!(!d.contains("sk-ant-secret-42"), "{d}");
+    assert!(d.contains("x-api-key"), "{d}");
+}
+
+/// M2: Dừng while the AI waits on a job cancels that job.
+#[test]
+fn stop_cancels_the_job_being_waited_on() {
+    let (mut app, ctx) = demo();
+    let job = filmcraft_engine::Job { id: 77, label: "Chép lời".into(), progress: Default::default(), result: Default::default() };
+    let cancel = job.progress.clone();
+    app.session.jobs.push(job);
+    script(&mut app, vec![reply("tool_use", json!([tool_use("w1", "wait_job", json!({"job": 77}))]))]);
+    send(&mut app, "Chờ").unwrap();
+    until(&mut app, &ctx, |a| matches!(a.ayp_chat.phase, Phase::Job { .. }));
+    stop(&mut app);
+    assert!(cancel.cancel.load(Ordering::Relaxed), "the job is cancelled");
+}
+
+/// M5: a key with spaces or a newline around it (pasted into the environment) still works.
+#[test]
+fn the_env_key_is_trimmed() {
+    let (mut app, ctx) = demo();
+    let log = script(&mut app, vec![reply("end_turn", json!([text("chào")]))]);
+    app.hooks.secret_get = None;
+    app.ayp_chat.env = |k| (k == "ANTHROPIC_API_KEY").then(|| "  env-key\n".to_string());
+    send(&mut app, "xin chào").unwrap();
+    settle(&mut app, &ctx);
+    assert_eq!(log.lock().unwrap()[0]["_key"], "env-key");
+    app.ayp_chat.env = |_| Some("  \n".into());
+    send(&mut app, "lại").unwrap();
+    assert_eq!(app.ayp_chat.cards.last(), Some(&Card::Error(api::ApiError::NoKey.vi())));
 }

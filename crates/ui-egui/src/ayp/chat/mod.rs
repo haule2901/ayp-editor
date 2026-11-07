@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError};
 use tools::Outcome;
 
-pub(crate) const BUSY: &str = "AI đang làm — bấm Dừng trước";
+pub(crate) const BUSY: &str = filmcraft_engine::EDIT_LOCKED;
 const NO_NET: &str = "App này chưa nối mạng cho AI";
 const STOPPED: &str = "Người dùng đã dừng";
 const NOT_CHOSEN: &str = "Người dùng không chọn";
@@ -29,6 +29,8 @@ const CUT: &str = "Câu trả lời bị cắt";
 const REFUSED: &str = "AI từ chối yêu cầu này";
 const REPLACED: &str = "Đã mở project khác — AI dừng lượt này";
 const AFTER: &str = "Đã có thao tác sau lượt này — dùng Hoàn tác (⌘Z) từng bước";
+const CUT_SHORT: &str = "Cuộc trò chuyện quá dài hoặc bị ngắt — bấm Trò chuyện mới";
+const NEW_PROJECT: &str = "Đã mở project khác — bắt đầu cuộc trò chuyện mới";
 const SKILL_MAX_BYTES: u64 = 200_000;
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -56,12 +58,13 @@ pub enum Card {
     Doing {
         steps: Vec<(String, Option<bool>)>,
     },
-    /// A finished turn that changed the project: its undo label, the command ids it ran, and the
-    /// undo depth right after it (Hoàn tác cả lượt only works while nothing came after).
+    /// A finished turn that added an undo step: its label, the command ids it ran, and the top of
+    /// the undo history right after it (Hoàn tác cả lượt only works while nothing came after).
     Result {
         label: String,
         commands: Vec<String>,
-        undo_len: usize,
+        #[serde(skip)]
+        mark: filmcraft_engine::UndoMark,
         undone: bool,
     },
     Error(String),
@@ -98,6 +101,8 @@ enum Phase {
 
 struct Turn {
     mark: filmcraft_engine::GroupMark,
+    /// The top of the undo history when the turn began: a Result card only when the turn moved it.
+    before: filmcraft_engine::UndoMark,
     label: String,
     /// The turn answers an approved plan: no edit is held back for want of one.
     plan_ok: bool,
@@ -143,6 +148,8 @@ pub struct Chat {
     system: Option<String>,
     /// Where the key comes from when the keychain has none (tests swap it).
     env: fn(&str) -> Option<String>,
+    /// `Session::projects_opened` the conversation belongs to.
+    opened: u64,
 }
 
 impl Default for Chat {
@@ -167,6 +174,7 @@ impl Default for Chat {
             label: String::new(),
             system: None,
             env: |k| std::env::var(k).ok(),
+            opened: 0,
         }
     }
 }
@@ -181,6 +189,61 @@ impl Chat {
     pub fn running_tool(&self) -> bool {
         self.in_tool
     }
+
+    /// The plan or choice card the conversation waits on (its buttons stay, whatever follows it).
+    pub fn waiting_card(&self) -> Option<usize> {
+        match self.phase {
+            Phase::Plan { card, .. } | Phase::Choice { card, .. } => Some(card),
+            _ => None,
+        }
+    }
+
+    /// Forget the conversation (model, settings and the typed message stay).
+    fn reset(&mut self) {
+        self.cards.clear();
+        self.messages.clear();
+        self.phase = Phase::Idle;
+        self.turn = None;
+        self.queue.clear();
+        self.answers.clear();
+        self.unanswered.clear();
+        self.label.clear();
+    }
+}
+
+/// The one place the engine edit lock follows the chat: on while a turn runs, lifted only while the
+/// chat runs its own tool. Every entry point ends here, so no path leaves it on after a turn.
+fn sync_lock(app: &mut FilmcraftApp) {
+    let on = app.ayp_chat.busy() && !app.ayp_chat.in_tool;
+    app.session.set_edit_lock(on);
+}
+
+/// Another project was opened: the conversation (its ids, its turn) belongs to the old one.
+fn follow_project(app: &mut FilmcraftApp) {
+    let n = app.session.projects_opened;
+    if n == app.ayp_chat.opened {
+        return;
+    }
+    app.ayp_chat.opened = n;
+    if app.ayp_chat.busy() {
+        stop_turn(app);
+    }
+    let chat = &mut app.ayp_chat;
+    let had = !chat.messages.is_empty() || !chat.cards.is_empty();
+    chat.reset();
+    if had {
+        chat.cards.push(Card::Text(NEW_PROJECT.into()));
+    }
+}
+
+/// Trò chuyện mới: start over (not while a turn runs).
+pub fn new_conversation(app: &mut FilmcraftApp) -> Result<(), String> {
+    if app.ayp_chat.busy() {
+        return Err(BUSY.into());
+    }
+    app.ayp_chat.reset();
+    sync_lock(app);
+    Ok(())
 }
 
 /// `~/.claude/skills/ayp-phu-de/SKILL.md`, when there is one of a sane size.
@@ -210,7 +273,7 @@ fn replaced(app: &FilmcraftApp) -> bool {
 fn connect(app: &FilmcraftApp) -> Result<(HttpPost, String), String> {
     let post = app.hooks.http_post.clone().ok_or(NO_NET)?;
     let key = app.hooks.secret_get.as_ref().and_then(|get| get("anthropic")).or_else(|| (app.ayp_chat.env)("ANTHROPIC_API_KEY"));
-    let key = key.filter(|k| !k.trim().is_empty()).ok_or_else(|| api::ApiError::NoKey.vi())?;
+    let key = key.map(|k| k.trim().to_string()).filter(|k| !k.is_empty()).ok_or_else(|| api::ApiError::NoKey.vi())?;
     Ok((post, key))
 }
 
@@ -227,6 +290,7 @@ fn ask(app: &mut FilmcraftApp, post: HttpPost, key: &str, content: Vec<Value>) {
 
 /// Start a turn. Answers the paused tool_use (if any), every unanswered one, then adds the text.
 fn begin(app: &mut FilmcraftApp, start: Start) -> Result<(), String> {
+    follow_project(app);
     let chat = &mut app.ayp_chat;
     if chat.busy() {
         return Err(BUSY.into());
@@ -274,6 +338,7 @@ fn begin(app: &mut FilmcraftApp, start: Start) -> Result<(), String> {
         content.push(json!({"type": "text", "text": t}));
     }
     let turn = Turn {
+        before: app.session.undo_mark(),
         mark: app.session.group_begin(),
         label: app.ayp_chat.label.clone(),
         plan_ok: matches!(start, Start::Plan(true)),
@@ -296,9 +361,9 @@ fn end_turn(app: &mut FilmcraftApp) {
     }
     let Some(t) = app.ayp_chat.turn.take() else { return };
     app.session.group_end(t.mark, &t.label, true);
-    if !t.commands.is_empty() {
-        let undo_len = app.session.history.undo.len();
-        app.ayp_chat.cards.push(Card::Result { label: t.label, commands: t.commands, undo_len, undone: false });
+    let mark = app.session.undo_mark();
+    if mark != t.before {
+        app.ayp_chat.cards.push(Card::Result { label: t.label, commands: t.commands, mark, undone: false });
     }
 }
 
@@ -307,9 +372,14 @@ fn stop_turn(app: &mut FilmcraftApp) {
     let chat = &mut app.ayp_chat;
     // the worker only stops on cancel: set it before the receiver is dropped
     chat.cancel.store(true, Ordering::SeqCst);
-    if let Phase::Job { tool, .. } = std::mem::replace(&mut chat.phase, Phase::Idle) {
+    if let Phase::Job { tool, job } = std::mem::replace(&mut chat.phase, Phase::Idle) {
         chat.unanswered.push(tool);
+        // the job the AI waited on stops with it (as jobs.cancel does)
+        if let Some(j) = app.session.jobs.iter().find(|j| j.id == job) {
+            j.progress.cancel.store(true, Ordering::Relaxed);
+        }
     }
+    let chat = &mut app.ayp_chat;
     let left: Vec<String> = chat.queue.drain(..).map(|c| c.id).collect();
     chat.unanswered.extend(left);
     end_turn(app);
@@ -353,9 +423,11 @@ fn on_reply(app: &mut FilmcraftApp, msg: &Value) {
     }
     chat.unanswered.extend(calls.into_iter().map(|c| c.id));
     match stop {
+        "end_turn" | "stop_sequence" => {}
         "max_tokens" => chat.cards.push(Card::Error(CUT.into())),
         "refusal" => chat.cards.push(Card::Error(REFUSED.into())),
-        _ => {}
+        // model_context_window_exceeded, pause_turn, none…: the conversation cannot go on as it is
+        _ => chat.cards.push(Card::Error(CUT_SHORT.into())),
     }
     stop_turn(app);
 }
@@ -401,9 +473,11 @@ fn run_next(app: &mut FilmcraftApp, ctx: &egui::Context) {
     let step = command.as_deref().and_then(|id| doing_step(&mut app.ayp_chat, command_label(id)));
     let edits = app.ayp_chat.turn.as_ref().map_or(0, |t| if t.plan_ok { 0 } else { t.edits });
     app.ayp_chat.in_tool = true;
+    sync_lock(app);
     let run = std::panic::AssertUnwindSafe(|| tools::run(app, ctx, &call.name, &call.input, edits));
     let out = std::panic::catch_unwind(run).unwrap_or_else(|_| Outcome::Error("lỗi nội bộ khi chạy công cụ".into()));
     app.ayp_chat.in_tool = false;
+    sync_lock(app);
     let chat = &mut app.ayp_chat;
     if let Some((card, i)) = step
         && let Some(Card::Doing { steps }) = chat.cards.get_mut(card)
@@ -461,6 +535,12 @@ fn job_done(app: &mut FilmcraftApp, job: u64) -> Option<Result<Value, String>> {
 
 /// Once a frame: take Claude's reply, run the next tool, or check on the job being waited for.
 pub fn poll(app: &mut FilmcraftApp, ctx: &egui::Context) {
+    follow_project(app);
+    step(app, ctx);
+    sync_lock(app);
+}
+
+fn step(app: &mut FilmcraftApp, ctx: &egui::Context) {
     if !app.ayp_chat.busy() {
         return;
     }
@@ -503,7 +583,9 @@ pub fn send(app: &mut FilmcraftApp, text: &str) -> Result<(), String> {
     if text.is_empty() {
         return Err("Chưa nhập gì".into());
     }
-    begin(app, Start::Text(text))
+    let r = begin(app, Start::Text(text));
+    sync_lock(app);
+    r
 }
 
 /// Stop the running turn; a reply that arrives later is dropped.
@@ -511,16 +593,21 @@ pub fn stop(app: &mut FilmcraftApp) {
     if app.ayp_chat.busy() {
         stop_turn(app);
     }
+    sync_lock(app);
 }
 
 /// Answer the plan the conversation waits on; either way Claude gets the answer in a new turn.
 pub fn decide_plan(app: &mut FilmcraftApp, approve: bool) -> Result<(), String> {
-    begin(app, Start::Plan(approve))
+    let r = begin(app, Start::Plan(approve));
+    sync_lock(app);
+    r
 }
 
 /// Pick option `option` of the choice the conversation waits on.
 pub fn choose(app: &mut FilmcraftApp, option: usize) -> Result<(), String> {
-    begin(app, Start::Choice(option))
+    let r = begin(app, Start::Choice(option));
+    sync_lock(app);
+    r
 }
 
 /// Hoàn tác cả lượt: undo the turn of Result card `card`, only while it is still the last step.
@@ -528,14 +615,13 @@ pub fn undo_turn(app: &mut FilmcraftApp, ctx: &egui::Context, card: usize) -> Re
     if app.ayp_chat.busy() {
         return Err(BUSY.into());
     }
-    let Some(Card::Result { label, undo_len, undone, .. }) = app.ayp_chat.cards.get(card) else {
+    let Some(Card::Result { label, mark, undone, .. }) = app.ayp_chat.cards.get(card) else {
         return Err("Không có lượt này".into());
     };
     if *undone {
         return Err("Lượt này đã hoàn tác rồi".into());
     }
-    let undo = &app.session.history.undo;
-    if undo.len() != *undo_len || undo.last().map(|u| u.0.as_str()) != Some(label.as_str()) {
+    if app.session.undo_mark() != *mark || app.session.history.undo.last().map(|u| u.0.as_str()) != Some(label.as_str()) {
         return Err(AFTER.into());
     }
     crate::menus::invoke(app, ctx, "edit.undo", json!({}))?;

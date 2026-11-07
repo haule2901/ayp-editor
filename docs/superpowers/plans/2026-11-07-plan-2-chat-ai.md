@@ -45,7 +45,7 @@ plan closes (group_end dirtying the project, GroupMark `#[must_use]`).
 - Keychain item: service `vn.ayp.editor`, account `anthropic`. Fallback when absent: env
   `ANTHROPIC_API_KEY`. The key never appears in logs, status lines, control output or the journal.
 - One AI turn = one undo entry labelled `AI: <first 40 chars of the user's message>`.
-- Build: `PATH=/opt/homebrew/opt/rustup/bin:$PATH CARGO_TARGET_DIR="/Volumes/Extreme SSD/aypeditor-target"`.
+- Build: `PATH=/opt/homebrew/opt/rustup/bin:$PATH CARGO_INCREMENTAL=0 CARGO_TARGET_DIR="$CARGO_TARGET_DIR"` — set `CARGO_TARGET_DIR` to a target folder on a drive with room (never `../filmcraft/target`).
   Run tests per crate (`cargo test -p filmcraft-ui-egui`, `-p filmcraft-engine`, `-p filmcraft`), not
   the whole workspace, unless the task says so. Never edit files while a cargo test run is in progress.
 - Known red baselines, not yours to fix: `vfx_tests::effects_list_reports_folders_and_badges`,

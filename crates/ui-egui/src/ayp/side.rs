@@ -8,8 +8,6 @@ const TAB_H: f32 = 28.0;
 pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let t = app.tokens;
     let ctx = ui.ctx().clone();
-    // the cover that keeps the pointer off the rest of the window while the AI works leaves this free
-    app.ui.ayp_side_rect = Some(rect);
     let w = (rect.width() - 12.0) / 2.0;
     for (i, (tab, id, label)) in [(AypSideTab::Props, "ayp.side.props", "Thông số"), (AypSideTab::Ai, "ayp.side.ai", "AI")].into_iter().enumerate() {
         let r = Rect::from_min_size(egui::pos2(rect.left() + 6.0 + i as f32 * w, rect.top() + 4.0), vec2(w, TAB_H)).shrink(2.0);

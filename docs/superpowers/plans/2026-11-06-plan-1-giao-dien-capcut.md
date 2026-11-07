@@ -24,7 +24,7 @@ hiện có vẫn thấy workspace "Editing" như trước.
 
 - Repo `/Users/haule/App Creator/AYP-Editor`, nhánh **`feat/plan-1`**. Commit nhỏ sau mỗi task, kết thúc
   commit message bằng `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Không push (người điều phối push).
-- **Build:** `export CARGO_INCREMENTAL=0 CARGO_TARGET_DIR="/Volumes/Extreme SSD/aypeditor-target"`. **Không bao
+- **Build:** `export CARGO_INCREMENTAL=0 CARGO_TARGET_DIR=<thư mục target trên ổ còn chỗ>` (dùng `$CARGO_TARGET_DIR`). **Không bao
   giờ** dùng `../filmcraft/target`, vì sẽ đè bản build của FilmCraft AYP. Nếu `df -h /` báo dưới 2 GB thì dừng
   và báo, không tự xoá gì.
 - Tên app **AYPEditor**, bundle id `vn.ayp.editor`, cài ở `~/Applications/AYPEditor.app`. **Không bao giờ** sửa,

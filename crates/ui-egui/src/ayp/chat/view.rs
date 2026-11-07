@@ -105,6 +105,8 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, body: Rect) {
     let (x, w) = (body.left() + 6.0, body.width() - 12.0);
     let mut y = body.top() + 4.0;
     follow_ime(app, &ctx);
+    // the cover that keeps the pointer off the window while the AI works leaves this free
+    app.ui.ayp_chat_rect = Some(body);
 
     if let Some(port) = app.control_busy_port {
         line(app, ui, "ayp.side.portBusy", &format!("Cổng {port} đang bận — AI/MCP đang nối với app khác"), &mut y, x, w);
@@ -114,6 +116,13 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, body: Rect) {
     if gear.clicked() {
         app.ayp_chat.settings_open = !app.ayp_chat.settings_open;
         app.ayp_chat.model_field = app.ayp_chat.model.clone();
+    }
+    let fresh = ui.put(Rect::from_min_size(egui::pos2(x + 136.0, y), vec2(130.0, 24.0)), egui::Button::new("Trò chuyện mới"));
+    app.auto.add_response("ayp.chat.new", &fresh, "Trò chuyện mới");
+    if fresh.clicked()
+        && let Err(e) = super::new_conversation(app)
+    {
+        app.ui.status = format!("Chưa làm được: {e}");
     }
     y += 28.0;
 
@@ -148,11 +157,11 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, body: Rect) {
     let cards_rect = Rect::from_min_max(egui::pos2(x, y), egui::pos2(x + w, input_top - 4.0));
     let mut acts = Vec::new();
     let busy = app.ayp_chat.busy();
+    let waiting = app.ayp_chat.waiting_card();
     let mut area = ui.new_child(egui::UiBuilder::new().max_rect(cards_rect));
     egui::ScrollArea::vertical().id_salt("ayp.chat.cards").stick_to_bottom(true).auto_shrink([false, false]).show(&mut area, |ui| {
-        let n = app.ayp_chat.cards.len();
         for (i, card) in app.ayp_chat.cards.iter().enumerate() {
-            cards::show(ui, &t, &mut app.auto, i, card, !busy && i + 1 == n, &mut acts);
+            cards::show(ui, &t, &mut app.auto, i, card, waiting == Some(i), &mut acts);
         }
     });
     for act in acts {
@@ -205,19 +214,25 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, body: Rect) {
     }
 }
 
-/// While the AI works, four areas cover the window outside the AYP right column, so the pointer cannot
-/// reach the timeline, the player or the left column (Dừng and the chat stay free).
+/// While the AI works, the window is covered but for the chat itself, so the pointer cannot reach the
+/// timeline, the player, the tabs or Thông số (Dừng and the chat stay free). When the chat is not on
+/// screen everything is covered, and a small bar keeps Dừng in reach.
 pub fn cover(app: &mut FilmcraftApp, ctx: &egui::Context) {
-    let side = app.ui.ayp_side_rect.take();
-    let (true, Some(side)) = (app.ayp_chat.busy(), side) else { return };
+    let chat = app.ui.ayp_chat_rect.take();
+    if !app.ayp_chat.busy() {
+        return;
+    }
     let s = ctx.content_rect();
     let p = egui::pos2;
-    let parts = [
-        Rect::from_min_max(s.min, p(s.max.x, side.top())),
-        Rect::from_min_max(p(s.min.x, side.bottom()), s.max),
-        Rect::from_min_max(p(s.min.x, side.top()), p(side.left(), side.bottom())),
-        Rect::from_min_max(p(side.right(), side.top()), p(s.max.x, side.bottom())),
-    ];
+    let parts = match chat {
+        Some(c) => vec![
+            Rect::from_min_max(s.min, p(s.max.x, c.top())),
+            Rect::from_min_max(p(s.min.x, c.bottom()), s.max),
+            Rect::from_min_max(p(s.min.x, c.top()), p(c.left(), c.bottom())),
+            Rect::from_min_max(p(c.right(), c.top()), p(s.max.x, c.bottom())),
+        ],
+        None => vec![s],
+    };
     for (n, r) in parts.into_iter().enumerate().filter(|(_, r)| r.width() > 0.0 && r.height() > 0.0) {
         egui::Area::new(egui::Id::new(("ayp.chat.cover", n))).order(egui::Order::Foreground).fixed_pos(r.min).show(ctx, |ui| {
             let (_, resp) = ui.allocate_exact_size(r.size(), egui::Sense::click_and_drag());
@@ -226,4 +241,21 @@ pub fn cover(app: &mut FilmcraftApp, ctx: &egui::Context) {
             }
         });
     }
+    if chat.is_some() {
+        return;
+    }
+    // above the cover
+    let t = app.tokens;
+    egui::Area::new(egui::Id::new("ayp.chat.stopBar")).order(egui::Order::Tooltip).anchor(egui::Align2::CENTER_TOP, vec2(0.0, 8.0)).show(ctx, |ui| {
+        egui::Frame::new().fill(t.field_bg).corner_radius(8.0).inner_margin(8.0).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("AI đang làm").color(t.text));
+                let stop = ui.button("Dừng");
+                app.auto.add_response("ayp.chat.stopBar", &stop, "Dừng");
+                if stop.clicked() {
+                    super::stop(app);
+                }
+            });
+        });
+    });
 }

@@ -186,6 +186,7 @@ pub fn handle(app: &mut FilmcraftApp, ctx: &egui::Context, req: &ControlRequest)
             crate::ayp::chat::stop(app);
             ok(json!({}))
         }
+        "ui.ayp.chat.new" => chat_done(crate::ayp::chat::new_conversation(app)),
         "ui.ayp.chat.plan" => {
             let Some(approve) = p.get("approve").and_then(Value::as_bool) else { return err("missing `approve` (true | false)") };
             chat_done(crate::ayp::chat::decide_plan(app, approve))

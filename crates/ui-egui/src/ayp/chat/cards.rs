@@ -19,8 +19,7 @@ fn button(ui: &mut egui::Ui, auto: &mut Registry, id: &str, label: &str, enabled
     r.clicked()
 }
 
-/// Draw card `i`. `open`: it is the last card and nothing is running, so a plan or a question on it
-/// still waits for an answer.
+/// Draw card `i`. `open`: it is the plan or the question the conversation waits on (`Chat::waiting_card`).
 pub fn show(ui: &mut egui::Ui, t: &Tokens, auto: &mut Registry, i: usize, card: &Card, open: bool, acts: &mut Vec<Act>) {
     let (fill, ink) = match card {
         Card::User(_) => (t.accent, Color32::WHITE),

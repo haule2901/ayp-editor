@@ -279,6 +279,89 @@ fn edits_are_refused_while_ai_works() {
     assert!(!d.has("ayp.chat.stop"));
 }
 
+/// I1: while the AI works only the chat is free: not the Thông số tab either. Away from the chat
+/// (another right tab, opened over MCP) the whole window is covered and a bar keeps Dừng in reach.
+#[test]
+fn only_the_chat_is_free_while_ai_works() {
+    let mut d = Driver::launch(vec![reply("end_turn", json!([text("Xong")])), reply("end_turn", json!([text("Xong")]))]);
+    let gate = d.hold_next();
+    d.type_into("ayp.chat.input", "Làm gì đó");
+    d.click("ayp.chat.send");
+    assert!(d.h.state().ayp_chat.busy());
+    d.click("ayp.side.props");
+    assert_eq!(d.h.state().ui.ayp_side, filmcraft_ui_egui::state::AypSideTab::Ai, "the Thông số tab is under the cover");
+    assert!(!d.has("ayp.chat.stopBar"), "the chat is on screen: no bar");
+    gate.send(()).unwrap();
+    d.settle();
+
+    // a turn started over MCP while Thông số is open
+    d.click("ayp.side.props");
+    let _gate = d.hold_next();
+    let v = d.call("ui.ayp.chat.send", json!({"text": "Làm tiếp"}));
+    assert_eq!(v["ok"], json!(true), "{v}");
+    d.frames(3);
+    assert!(d.h.state().ayp_chat.busy());
+    d.click("ayp.tab.cut");
+    assert_eq!(d.h.state().ui.ayp_tab, "media", "everything is covered");
+    d.click("ayp.chat.stopBar");
+    assert!(!d.h.state().ayp_chat.busy(), "Dừng on the bar stops the turn");
+    assert!(!d.h.state().session.edit_locked());
+}
+
+/// I4: Làm / Sửa / Bỏ stay on the plan when cards follow it: edits before the plan in the same reply,
+/// or an error card from pressing Làm offline.
+#[test]
+fn plan_buttons_survive_cards_after_the_plan() {
+    let plan = tool_use("p1", "propose_plan", json!({"title": "Thêm track", "steps": ["Thêm một track video"]}));
+    let mut d = Driver::launch(vec![reply("tool_use", json!([add_track("t1"), plan]))]);
+    d.type_into("ayp.chat.input", "Thêm track rồi lập kế hoạch");
+    d.click("ayp.chat.send");
+    d.settle();
+    assert!(d.ids("ayp.chat.undoTurn.").len() == 1, "a Result card follows the plan: {:?}", d.h.state().ayp_chat.cards);
+    for id in ["ayp.chat.plan.approve", "ayp.chat.plan.edit", "ayp.chat.plan.reject"] {
+        assert!(d.has(id), "{id}");
+    }
+    d.h.state_mut().hooks.http_post = None;
+    d.click("ayp.chat.plan.approve");
+    assert!(matches!(d.h.state().ayp_chat.cards.last(), Some(filmcraft_ui_egui::ayp::chat::Card::Error(_))));
+    assert!(d.has("ayp.chat.plan.approve"), "offline: the plan still waits, its buttons stay");
+}
+
+/// I5: Trò chuyện mới, as a button and over control.
+#[test]
+fn new_conversation_button_and_method() {
+    let mut d = Driver::launch(vec![reply("end_turn", json!([text("Một")])), reply("end_turn", json!([text("Hai")]))]);
+    d.type_into("ayp.chat.input", "Một");
+    d.click("ayp.chat.send");
+    d.settle();
+    assert!(d.has("ayp.chat.new"));
+    d.click("ayp.chat.new");
+    assert!(d.h.state().ayp_chat.cards.is_empty());
+    d.type_into("ayp.chat.input", "Hai");
+    d.click("ayp.chat.send");
+    d.settle();
+    let v = d.call("ui.ayp.chat.new", json!({}));
+    assert_eq!(v["ok"], json!(true), "{v}");
+    assert!(d.h.state().ayp_chat.cards.is_empty());
+    assert_eq!(d.log.lock().unwrap()[1]["messages"].as_array().unwrap().len(), 1, "the second request forgot the first");
+}
+
+/// M7: an IME commit and Enter in the same frame send the committed text and empty the box.
+#[test]
+fn ime_commit_and_enter_in_one_frame_send_the_text() {
+    let mut d = Driver::launch(vec![reply("end_turn", json!([text("Ừ")]))]);
+    d.type_into("ayp.chat.input", "xin ");
+    d.h.input_mut().events.push(egui::Event::Ime(egui::ImeEvent::Preedit { text: "chào".into(), active_range_chars: None }));
+    d.frames(2);
+    d.h.input_mut().events.push(egui::Event::Ime(egui::ImeEvent::Commit("chào".into())));
+    d.h.input_mut().events.push(egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
+    d.frames(2);
+    d.settle();
+    let sent = d.h.state().ayp_chat.cards.first().cloned();
+    assert!(matches!(&sent, Some(filmcraft_ui_egui::ayp::chat::Card::User(t)) if t.ends_with("chào")), "{sent:?}");
+    assert!(d.h.state().ayp_chat.input.is_empty(), "the box is emptied");
+}
+
 #[test]
 fn ai_items_open_the_chat() {
     let mut d = Driver::launch(vec![reply("end_turn", json!([text("Anh gửi bản chép lời nhé")]))]);

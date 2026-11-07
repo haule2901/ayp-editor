@@ -180,12 +180,30 @@ pub struct HostHooks {
     pub secret_set: Option<Box<dyn FnMut(&str, &str) -> Result<(), String>>>,
 }
 
-/// One HTTPS POST for [`HostHooks::http_post`].
-#[derive(Clone, Debug, Default, PartialEq)]
+/// The status bar's word for a running job, from its label.
+fn job_verb(label: &str, ayp: bool) -> String {
+    match label {
+        l if l.starts_with("Rendering") => crate::i18n::t(l).to_string(),
+        // ponytail: AYP only gets the Vietnamese word; plain FilmCraft says it in English
+        l if l.starts_with("Transcribe") => if ayp { "Đang chép lời" } else { "Transcribing" }.to_string(),
+        _ => tl!("Exporting").to_string(),
+    }
+}
+
+/// One HTTPS POST for [`HostHooks::http_post`]. Its Debug output never shows a header value (the
+/// API key is one).
+#[derive(Clone, Default, PartialEq)]
 pub struct HttpRequest {
     pub url: String,
     pub headers: Vec<(String, String)>,
     pub body: String,
+}
+
+impl std::fmt::Debug for HttpRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let headers: Vec<(&str, &str)> = self.headers.iter().map(|(k, _)| (k.as_str(), "…")).collect();
+        f.debug_struct("HttpRequest").field("url", &self.url).field("headers", &headers).field("body", &self.body).finish()
+    }
 }
 
 /// The answer to an [`HttpRequest`]: any status counts (a 429 or 500 is an answer, not an error).
@@ -2040,7 +2058,7 @@ impl FilmcraftApp {
         let p = ui.painter();
         p.rect_filled(bar, 3.0, t.separator);
         p.rect_filled(egui::Rect::from_min_size(bar.min, egui::vec2(bar.width() * f, bar.height())), 3.0, t.accent);
-        let verb = if job.label.starts_with("Rendering") { crate::i18n::t(&job.label).to_string() } else { tl!("Exporting").to_string() };
+        let verb = job_verb(&job.label, self.ayp_default);
         p.text(
             egui::pos2(bar.min.x - 8.0, sb.center().y),
             egui::Align2::RIGHT_CENTER,
@@ -2994,5 +3012,16 @@ mod native_menu_tests {
         app.sync_native_menu();
         assert_eq!(last(&sent, "edit.undo"), Some(false));
         assert_eq!(last(&sent, "edit.redo"), Some(true), "the undone edit can be redone");
+    }
+}
+
+#[cfg(test)]
+mod job_verb_tests {
+    /// M1: a background transcription is not "Exporting".
+    #[test]
+    fn transcription_is_not_called_exporting() {
+        assert_eq!(super::job_verb("Transcribe (1 clip)", true), "Đang chép lời");
+        assert_eq!(super::job_verb("Transcribe (2 clips)", false), "Transcribing");
+        assert_eq!(super::job_verb("Export H.264", true), crate::i18n::t("Exporting"));
     }
 }

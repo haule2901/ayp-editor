@@ -19,6 +19,12 @@ const ONE_STEP: &str = "Mỗi lượt AI đã là một bước hoàn tác — k
 /// The turn is the undo group: a group of its own would outlive it, and undo / redo would reach
 /// below the turn's mark into the user's own steps.
 const NOT_IN_CHAT: [&str; 4] = ["history.beginGroup", "history.endGroup", "edit.undo", "edit.redo"];
+const SAVE_FIRST: &str = "Lưu project trước khi mở hoặc tạo project khác";
+const USER_ONLY: &str = "Chỉ người dùng tự làm việc này, không làm trong chat";
+/// Commands that replace or close the open project: over unsaved changes they would lose them for
+/// good (a new project starts a new history, so not even the turn's undo brings them back).
+const REPLACES_PROJECT: [&str; 7] =
+    ["file.newProject", "file.newProjectFromTemplate", "file.openDemoProject", "file.open", "file.revert", "file.closeProject", "file.recover"];
 
 fn tool(name: &str, description: &str, strict: bool, properties: Value) -> Value {
     let required: Vec<&String> = properties.as_object().map(|o| o.keys().collect()).unwrap_or_default();
@@ -155,6 +161,12 @@ fn run_command(app: &mut FilmcraftApp, ctx: &egui::Context, input: &Value, edits
     };
     if NOT_IN_CHAT.contains(&id) {
         return Err(Outcome::Error(ONE_STEP.into()));
+    }
+    if id == "file.discardRecovery" {
+        return Err(Outcome::Error(USER_ONLY.into()));
+    }
+    if app.session.is_dirty() && (REPLACES_PROJECT.contains(&id) || id.starts_with("file.openRecent.")) {
+        return Err(Outcome::Error(SAVE_FIRST.into()));
     }
     // UI-only commands (menus::UI_COMMANDS) are not in the engine list: they count as not journaled
     if edits_without_plan >= 3 && filmcraft_engine::find_command(id).is_some_and(|c| c.journal) {

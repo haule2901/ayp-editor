@@ -178,10 +178,10 @@ pub fn targets_source(app: &FilmcraftApp, params: &Value) -> bool {
 
 /// Execute a UI or engine command by id.
 pub fn invoke(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, mut params: Value) -> Result<Value, String> {
-    // The project is read-only while the AI works (its own tools excepted): a person's edit, MCP's too,
-    // would land in the middle of the AI's undo step.
-    if app.ayp_chat.busy() && !app.ayp_chat.running_tool() && filmcraft_engine::find_command(id).is_some_and(|c| c.journal) {
-        return Err(crate::ayp::chat::BUSY.into());
+    // The project is read-only while the AI works (the engine edit lock the chat holds; its own tools
+    // run with it lifted): refuse before any UI-side step of the command runs.
+    if app.session.edit_locked() && filmcraft_engine::find_command(id).is_some_and(|c| c.journal) {
+        return Err(filmcraft_engine::EDIT_LOCKED.into());
     }
     if id == "edit.selectAll" && (crate::panels::graphics::select_all_edited_text(app) || crate::panels::effect_controls::select_all_keyframes(app)) {
         return Ok(Value::Null);
