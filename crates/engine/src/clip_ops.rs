@@ -827,6 +827,7 @@ fn close_project(s: &mut Session, p: &Value) -> Result<Value> {
     }
     s.project = std::sync::Arc::new(Project::new("Untitled"));
     s.history = Default::default();
+    s.projects_opened += 1;
     s.history.limit = 200;
     s.state = Session::default().state;
     if s.path.take().is_some() {

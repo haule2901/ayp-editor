@@ -195,6 +195,9 @@ impl Services for FsServices {
     }
 }
 
+/// Why [`Session::execute`] refused an edit while [`Session::set_edit_lock`] is on.
+pub const EDIT_LOCKED: &str = "AI đang làm — bấm Dừng trước";
+
 /// A point in the undo history (its top step), from [`Session::undo_mark`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct UndoMark(Option<usize>);
@@ -456,6 +459,11 @@ pub struct Session {
     pub browser: media_browser::BrowserState,
     /// Nesting depth of [`Session::execute`] (commands that run other commands).
     exec_depth: u32,
+    /// [`Session::set_edit_lock`]: a host's AI turn owns the project for now.
+    edit_lock: bool,
+    /// Counts the projects that replaced the open one (new, open, demo, template, recover, close):
+    /// a host sees another project was opened when it changes.
+    pub projects_opened: u64,
     /// The group opened by `history.beginGroup`, closed by `history.endGroup`.
     pub(crate) open_group: Option<GroupMark>,
     /// Each media file's size and modification time when last seen (Settings ▸ Media ▸
@@ -554,6 +562,8 @@ impl Session {
             log: Default::default(),
             browser: Default::default(),
             exec_depth: 0,
+            edit_lock: false,
+            projects_opened: 0,
             open_group: None,
             media_stamps: Default::default(),
             media_scan: None,
@@ -707,9 +717,23 @@ impl Session {
         self.revision != self.saved_revision
     }
 
+    /// While on, every project-changing command (and opening or closing a history group) run from
+    /// outside a command is refused with [`EDIT_LOCKED`]; reads still run. A host holds it while an
+    /// AI turn works, so no other edit lands inside the turn's undo step.
+    pub fn set_edit_lock(&mut self, on: bool) {
+        self.edit_lock = on;
+    }
+
+    pub fn edit_locked(&self) -> bool {
+        self.edit_lock
+    }
+
     /// Run a command by id.
     pub fn execute(&mut self, id: &str, params: Value) -> Result<Value> {
         let spec = commands::find(id).ok_or_else(|| EngineError::UnknownCommand(id.to_string()))?;
+        if self.exec_depth == 0 && self.edit_lock && (spec.journal || matches!(id, "history.beginGroup" | "history.endGroup")) {
+            return Err(EngineError::Other(EDIT_LOCKED.into()));
+        }
         if self.exec_depth == 0 && spec.journal && self.trim_play.active() {
             self.settle_trim_playback(id);
         }

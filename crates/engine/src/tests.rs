@@ -1193,3 +1193,32 @@ fn history_group_commands() {
     assert_eq!(s.history.undo.len(), undo + 1);
     assert_eq!(s.history.undo.last().map(|e| e.0.as_str()), Some("AI: thử"));
 }
+
+/// I1 / M3: while the edit lock is on, edits and history groups from outside are refused; reads run.
+#[test]
+fn edit_lock_refuses_edits_and_groups_but_not_reads() {
+    let mut s = demo();
+    let (project, undo) = (s.project.clone(), s.history.undo.len());
+    s.set_edit_lock(true);
+    for (id, p) in [("sequence.addTracks", json!({"video": 1})), ("history.beginGroup", json!({})), ("history.endGroup", json!({"label": "x"}))] {
+        let e = s.execute(id, p).unwrap_err().to_string();
+        assert_eq!(e, crate::EDIT_LOCKED, "{id}");
+    }
+    assert!(s.execute("sequence.inspect", json!({})).is_ok(), "reads still run");
+    assert!(Arc::ptr_eq(&s.project, &project) && s.history.undo.len() == undo);
+    s.set_edit_lock(false);
+    s.execute("sequence.addTracks", json!({"video": 1})).unwrap();
+}
+
+/// I5: every project that replaces the open one is counted (hosts start a new AI conversation).
+#[test]
+fn projects_opened_counts_replacements() {
+    let mut s = demo();
+    let n = s.projects_opened;
+    s.execute("file.newProject", json!({"name": "a"})).unwrap();
+    s.execute("file.openDemoProject", json!({})).unwrap();
+    s.execute("file.closeProject", json!({"force": true})).unwrap();
+    assert_eq!(s.projects_opened, n + 3);
+    s.execute("sequence.inspect", json!({})).ok();
+    assert_eq!(s.projects_opened, n + 3, "other commands do not count");
+}

@@ -1140,6 +1140,7 @@ fn build() -> Vec<CommandSpec> {
             let name = str_p(p, "name").unwrap_or("Untitled").to_string();
             s.project = std::sync::Arc::new(filmcraft_project::Project::new(&name));
             s.history = Default::default();
+            s.projects_opened += 1;
             s.history.limit = 200;
             s.state = crate::Session::default().state;
             if s.path.take().is_some() {
@@ -1154,6 +1155,7 @@ fn build() -> Vec<CommandSpec> {
             let (p, seq) = crate::demo::demo_project(&s.media);
             s.project = std::sync::Arc::new(p);
             s.history = Default::default();
+            s.projects_opened += 1;
             s.history.limit = 200;
             s.state = crate::Session::default().state;
             s.state.active_sequence = Some(seq);
@@ -4390,6 +4392,7 @@ fn install_project(s: &mut Session, proj: filmcraft_project::Project, path: Opti
     let first = proj.sequences().next().map(|i| i.id);
     s.project = std::sync::Arc::new(proj);
     s.history = Default::default();
+    s.projects_opened += 1;
     s.history.limit = 200;
     s.state = crate::Session::default().state;
     s.state.active_sequence = first;
