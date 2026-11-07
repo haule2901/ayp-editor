@@ -333,3 +333,32 @@ fn background_transcribe_cancel_changes_nothing() {
     assert!(s.project.transcripts.is_empty());
     assert_eq!((s.revision, s.history.undo.len()), (rev, before));
 }
+
+/// C1: a background transcript never lands on a same-numbered item of a project opened meanwhile.
+#[test]
+fn background_transcript_skips_a_replaced_project() {
+    let (mut s, item, _) = session();
+    s.transcriber = Some(Arc::new(Stubborn));
+    let r = s.execute("transcript.generate", json!({"items": [item.0], "background": true})).unwrap();
+    s.execute("file.newProject", json!({"name": "Khác"})).unwrap();
+    // fill the new project until an item has the old id (different media)
+    for _ in 0..64 {
+        if s.project.item(item).is_some() {
+            break;
+        }
+        s.execute("file.newColorMatte", json!({"color": "#ff0000", "seconds": 1.0})).unwrap();
+    }
+    assert!(s.project.item(item).is_some(), "the id repeats in the new project");
+    let (rev, undo) = (s.revision, s.history.undo.len());
+    // let the job finish with a transcript (the stub keeps going until cancel: swap the result in)
+    let pj = s.transcript_jobs.iter().find(|j| j.job == r["job"].as_u64().unwrap()).unwrap();
+    *pj.results.lock().unwrap() = Some(vec![(item, Transcript { language: "en".into(), ..Default::default() })]);
+    let job = s.jobs.iter().find(|j| j.id == r["job"].as_u64().unwrap()).unwrap();
+    job.progress.finished.store(true, std::sync::atomic::Ordering::Relaxed);
+    crate::transcript::poll(&mut s);
+    assert!(s.transcript_jobs.is_empty());
+    assert!(s.project.transcripts.is_empty(), "nothing lands on the other project's item");
+    assert_eq!((s.revision, s.history.undo.len()), (rev, undo), "no undo step, not dirtied");
+    // stop the stub thread
+    let _ = s.execute("jobs.cancel", r.clone());
+}

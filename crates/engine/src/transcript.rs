@@ -134,6 +134,9 @@ type Done = Vec<(ItemId, Transcript)>;
 pub struct PendingTranscribe {
     pub job: u64,
     pub results: Arc<std::sync::Mutex<Option<Done>>>,
+    /// Each item's media when the job started: a result lands only on that same media (the project
+    /// may have been replaced meanwhile, and item ids repeat across projects).
+    pub media: Vec<(ItemId, filmcraft_project::MediaRef)>,
 }
 
 fn lock<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -144,14 +147,18 @@ fn lock<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 /// shows the progress, `jobs.cancel` stops it), apply everything as one undo step in [`poll`].
 fn generate_background(s: &mut Session, items: Vec<ItemId>, t: Arc<dyn Transcriber>, opts: Options) -> Result<Value> {
     let mut work = Vec::new();
+    let mut media = Vec::new();
     let mut skipped = Vec::new();
     for item in items {
-        let dur = match s.project.item(item).map(|i| &i.kind) {
-            Some(ItemKind::Media(m)) => Some(m.duration()),
+        let clip = match s.project.item(item).map(|i| &i.kind) {
+            Some(ItemKind::Media(m)) => Some((m.duration(), m.media.clone())),
             _ => None,
         };
-        match (dur, s.source(item)) {
-            (Some(d), Some(src)) if src.info().has_audio() => work.push((item, src, d)),
+        match (clip, s.source(item)) {
+            (Some((d, m)), Some(src)) if src.info().has_audio() => {
+                work.push((item, src, d));
+                media.push((item, m));
+            }
             _ => skipped.push(item.0),
         }
     }
@@ -215,7 +222,7 @@ fn generate_background(s: &mut Session, items: Vec<ItemId>, t: Arc<dyn Transcrib
     };
     let run = crate::export_tools::guard_job(job.progress.clone(), job.result.clone(), run);
     s.jobs.push(job);
-    s.transcript_jobs.push(PendingTranscribe { job: id, results });
+    s.transcript_jobs.push(PendingTranscribe { job: id, results, media });
     if cfg!(target_arch = "wasm32") {
         run();
         poll(s);
@@ -239,6 +246,15 @@ pub fn poll(s: &mut Session) {
         let cancelled = job.is_some_and(|j| j.progress.cancel.load(Ordering::Relaxed));
         let pj = s.transcript_jobs.remove(i);
         let Some(done) = lock(&pj.results).take().filter(|_| !cancelled) else { continue };
+        // only onto the media it was made from: never a same-numbered item of another project
+        let same = |id: &ItemId| {
+            let started = pj.media.iter().find(|(i, _)| i == id).map(|(_, m)| m);
+            matches!((s.project.item(*id).map(|i| &i.kind), started), (Some(ItemKind::Media(m)), Some(was)) if m.media == *was)
+        };
+        let done: Done = done.into_iter().filter(|(id, _)| same(id)).collect();
+        if done.is_empty() {
+            continue;
+        }
         let r = s.edit("Transcribe", move |pr, _| {
             for (i, t) in done {
                 pr.transcripts.insert(i, Arc::new(t));
