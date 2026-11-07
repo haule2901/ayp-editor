@@ -387,8 +387,7 @@ pub struct FilmcraftApp {
     pub ayp_default: bool,
     /// The control port that was busy at launch (no control channel is attached): the AYP AI tab says so.
     pub control_busy_port: Option<u16>,
-    /// AYP: a transcription clicked last frame, run this frame once its warning is painted.
-    /// When the last AYP transcription finished (clicks queued while it ran are dropped).
+    /// Id of the running Chép lời job.
     pub(crate) ayp_transcribing: Option<u64>,
     /// The AYP layout as last saved (or loaded); a different dock means a change to save.
     ayp_saved: Option<dock::Layout>,

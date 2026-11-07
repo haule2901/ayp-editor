@@ -284,6 +284,14 @@ fn background_transcribe_applies_once_when_done() {
     let r = s.execute("transcript.generate", json!({"items": [item.0], "background": true})).unwrap();
     let job = r["job"].as_u64().expect("a job id");
     assert!(r.get("items").is_none(), "{r}");
+    // finished, but not yet polled: nothing is applied
+    let t0 = std::time::Instant::now();
+    while !s.jobs.iter().find(|j| j.id == job).is_some_and(|j| j.progress.finished.load(std::sync::atomic::Ordering::Relaxed)) {
+        assert!(t0.elapsed().as_secs() < 60, "job never finished");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(s.project.transcripts.is_empty(), "absent until poll");
+    assert_eq!(s.history.undo.len(), before);
     wait_job(&mut s);
     let j = s.execute("jobs.list", json!({})).unwrap();
     let j = j.as_array().unwrap().iter().find(|x| x["id"] == job).unwrap().clone();
