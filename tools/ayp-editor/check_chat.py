@@ -44,12 +44,17 @@ def probe_jobs(app):
     return r.get("result") or []
 
 
-def unsaved_work(pr):
-    """True when the open project has unsaved changes and could hold someone's work. Only an explicit empty
-    project (nothing in the bin, no sequence open: a previous run's leftover) is let through; anything unclear refuses."""
-    if not pr.get("dirty"):
+def unsaved_work(reply):
+    """True (refuse) unless it is certain that starting a new project loses nothing. `reply` is the whole answer to
+    project.inspect: a failed or empty one, or a missing or non-bool `dirty`, refuses. A dirty project is let through
+    only when it is explicitly empty (`root.children` is [] and the `activeSequence` key is present and null)."""
+    pr = reply.get("result") if isinstance(reply, dict) and reply.get("ok") else None
+    if not isinstance(pr, dict) or not isinstance(pr.get("dirty"), bool):
+        return True
+    if not pr["dirty"]:
         return False
-    empty = (pr.get("root") or {}).get("children") == [] and pr.get("activeSequence") is None
+    root = pr.get("root")
+    empty = isinstance(root, dict) and root.get("children") == [] and "activeSequence" in pr and pr["activeSequence"] is None
     return not empty
 
 
@@ -94,16 +99,19 @@ def main():
         sys.exit(f"nothing answers on 127.0.0.1:{a.port} ({e}); start AYPEditor with --control {a.port}")
     if not (tabs.get("ok") and "workspace" in (state.get("result") or {}) and app.call("ui.ayp.chat.state").get("ok")):
         sys.exit(f"the app on port {a.port} is not AYPEditor with the AI chat; refusing to touch it")
-    pr = proj.get("result") or {}
-    if unsaved_work(pr):
-        sys.exit(f"AYPEditor on port {a.port} has unsaved changes; save or close them first")
+    if unsaved_work(proj):
+        sys.exit(f"AYPEditor on port {a.port} has unsaved changes (or its project state is unclear); save or close them first")
 
     wake()
     work = tempfile.mkdtemp(prefix="aype-chat-")
     clip = os.path.join(work, "clip.mp4")
-    if subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", a.media, "-t", str(a.seconds), "-c", "copy", clip]).returncode:
-        shutil.copy(a.media, clip)
     try:
+        try:
+            cut = subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", a.media, "-t", str(a.seconds), "-c", "copy", clip]).returncode
+        except OSError:  # no ffmpeg: use the whole clip
+            cut = 1
+        if cut:
+            shutil.copy(a.media, clip)
         rows = []
 
         def row(name, result, note):
