@@ -55,48 +55,41 @@ fn voiceover(app: &mut FilmcraftApp, start: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// Minutes the UI stands while transcribing (about 55 s per minute of speech), at least one: the media
-/// `transcript.generate` would take (the Project selection, else the open sequence's audio).
-fn transcribe_minutes(app: &FilmcraftApp) -> u64 {
-    let s = &app.session;
-    let mut items = s.state.project_selection.clone();
-    if items.is_empty()
-        && let Some(q) = s.active_sequence()
-    {
-        items = q.audio_tracks.iter().flat_map(|t| t.items.iter()).filter(|i| i.enabled).map(|i| i.item).collect();
-    }
-    items.sort_by_key(|i| i.0);
-    items.dedup();
-    let secs: f64 = items
-        .iter()
-        .filter_map(|i| match &s.project.item(*i)?.kind {
-            filmcraft_project::ItemKind::Media(m) => Some(m.duration().seconds()),
-            _ => None,
-        })
-        .sum();
-    ((secs * 55.0 / 3600.0).ceil() as u64).max(1)
-}
-
 pub(crate) fn click_item(app: &mut FilmcraftApp, ctx: &egui::Context, item: &'static Item) {
     if item.cmd == "transcript.generate" {
-        // ponytail: transcribing blocks the UI thread until plan 2 makes it a job. Put the warning up now
-        // so it is painted, run it next frame (run_pending), and drop the clicks queued while it stood.
-        let recent = app.ayp_transcribed.is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(1));
-        if app.ayp_pending.is_none() && !recent {
-            app.ui.status = format!("Đang chép lời… app sẽ đứng khoảng {} phút, đừng tắt app", transcribe_minutes(app));
-            app.ayp_pending = Some(item);
-            ctx.request_repaint();
+        // Chép lời runs as a background job; the status line follows it (run_pending, every frame).
+        if app.ayp_transcribing.is_some() {
+            app.ui.status = "Đang chép lời rồi".into();
+            return;
+        }
+        let mut params: serde_json::Value = serde_json::from_str(item.params).unwrap_or_else(|_| serde_json::json!({}));
+        params["background"] = true.into();
+        if let Ok(r) = step(app, ctx, item.cmd, &params.to_string()) {
+            app.ayp_transcribing = r.get("job").and_then(serde_json::Value::as_u64);
+            app.ui.status = "Đang chép lời… 0%".into();
         }
         return;
     }
     run_item(app, ctx, item);
 }
 
-/// Run the transcription a click stashed on the frame before, now that its warning is on screen.
-pub(crate) fn run_pending(app: &mut FilmcraftApp, ctx: &egui::Context) {
-    let Some(item) = app.ayp_pending.take() else { return };
-    run_item(app, ctx, item);
-    app.ayp_transcribed = Some(std::time::Instant::now());
+/// Every frame: show how far the Chép lời job is, and say when it is over.
+pub(crate) fn run_pending(app: &mut FilmcraftApp, _ctx: &egui::Context) {
+    let Some(id) = app.ayp_transcribing else { return };
+    let job = app.session.jobs.iter().find(|j| j.id == id);
+    let running = !app.session.transcript_jobs.is_empty() && job.is_some_and(|j| !j.progress.finished.load(std::sync::atomic::Ordering::Relaxed));
+    if running {
+        let pct = job.map(|j| (j.progress.fraction() * 100.0) as u32).unwrap_or(0).min(100);
+        app.ui.status = format!("Đang chép lời… {pct}%");
+        return;
+    }
+    app.ayp_transcribing = None;
+    let err = job.and_then(|j| j.result.lock().unwrap_or_else(|e| e.into_inner()).clone()).and_then(Result::err);
+    app.ui.status = match err {
+        None => "Đã chép lời xong".into(),
+        Some(e) if e == "stopped" => "Đã dừng chép lời".into(),
+        Some(e) => format!("Chưa làm được: {}", vi::reason(&e)),
+    };
 }
 
 fn run_item(app: &mut FilmcraftApp, ctx: &egui::Context, item: &Item) {
@@ -269,24 +262,25 @@ pub(crate) mod tests {
         TABS.iter().flat_map(|t| t.items).find(|i| i.key == key).unwrap()
     }
 
-    /// Transcribing stands the UI thread for about a minute per minute of speech: the click only puts the
-    /// warning up (so it is painted), the next frame runs it, and clicks queued meanwhile start nothing.
+    /// Chép lời is a background job: the click returns at once, the status follows the job, and the
+    /// transcript lands in one undo step; a second click meanwhile says it is already running.
     #[test]
-    fn transcribing_warns_first_and_runs_on_the_next_frame() {
+    fn transcribe_button_does_not_block() {
         let (mut app, ctx) = demo_transcribing();
-        let steps = |app: &FilmcraftApp| app.session.history.undo.len();
-        let before = steps(&app);
+        let before = app.session.history.undo.len();
         click_item(&mut app, &ctx, item("captions.transcribe"));
-        let warning = app.ui.status.clone();
-        assert!(warning.starts_with("Đang chép lời… app sẽ đứng khoảng ") && warning.ends_with(" phút, đừng tắt app"), "{warning}");
-        assert_eq!(steps(&app), before, "the click frame only warns");
+        assert!(app.ui.status.starts_with("Đang chép lời… "), "{}", app.ui.status);
+        assert!(app.ayp_transcribing.is_some());
         click_item(&mut app, &ctx, item("transcript.generate"));
-        assert_eq!(app.ui.status, warning, "a second click while it waits does nothing");
-        run_pending(&mut app, &ctx);
-        assert_eq!(steps(&app), before + 1, "the next frame ran it once: {}", app.ui.status);
-        assert_ne!(app.ui.status, warning);
-        click_item(&mut app, &ctx, item("transcript.generate"));
-        run_pending(&mut app, &ctx);
-        assert_eq!(steps(&app), before + 1, "a click right after it finished is dropped");
+        assert_eq!(app.ui.status, "Đang chép lời rồi");
+        let t0 = std::time::Instant::now();
+        while app.ayp_transcribing.is_some() {
+            app.session.poll_persistence();
+            run_pending(&mut app, &ctx);
+            assert!(t0.elapsed().as_secs() < 60, "{}", app.ui.status);
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(app.ui.status, "Đã chép lời xong");
+        assert_eq!(app.session.history.undo.len(), before + 1);
     }
 }

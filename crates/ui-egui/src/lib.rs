@@ -388,9 +388,8 @@ pub struct FilmcraftApp {
     /// The control port that was busy at launch (no control channel is attached): the AYP AI tab says so.
     pub control_busy_port: Option<u16>,
     /// AYP: a transcription clicked last frame, run this frame once its warning is painted.
-    pub(crate) ayp_pending: Option<&'static ayp::tabs::Item>,
     /// When the last AYP transcription finished (clicks queued while it ran are dropped).
-    pub(crate) ayp_transcribed: Option<std::time::Instant>,
+    pub(crate) ayp_transcribing: Option<u64>,
     /// The AYP layout as last saved (or loaded); a different dock means a change to save.
     ayp_saved: Option<dock::Layout>,
     /// The layout seen last frame and when it last changed (for the autosave debounce).
@@ -617,8 +616,7 @@ impl FilmcraftApp {
             workspace_restored: false,
             ayp_default: false,
             control_busy_port: None,
-            ayp_pending: None,
-            ayp_transcribed: None,
+            ayp_transcribing: None,
             ayp_saved: None,
             ayp_seen: None,
             workspaces,

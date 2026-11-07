@@ -266,3 +266,62 @@ fn editor_chunks_become_the_ayp_track() {
     assert!(t.captions[0].start + t.captions[0].duration <= t.captions[1].start);
     q.check().unwrap();
 }
+
+fn wait_job(s: &mut Session) {
+    let t0 = std::time::Instant::now();
+    while !s.transcript_jobs.is_empty() {
+        s.poll_persistence();
+        assert!(t0.elapsed().as_secs() < 60, "job never finished");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
+/// `background: true` returns a job at once; the transcript lands in one undo step once it finished.
+#[test]
+fn background_transcribe_applies_once_when_done() {
+    let (mut s, item, _) = session();
+    let before = s.history.undo.len();
+    let r = s.execute("transcript.generate", json!({"items": [item.0], "background": true})).unwrap();
+    let job = r["job"].as_u64().expect("a job id");
+    assert!(r.get("items").is_none(), "{r}");
+    wait_job(&mut s);
+    let j = s.execute("jobs.list", json!({})).unwrap();
+    let j = j.as_array().unwrap().iter().find(|x| x["id"] == job).unwrap().clone();
+    assert_eq!(j["finished"], true, "{j}");
+    assert_eq!(j["done"], j["total"], "{j}");
+    assert_eq!(s.project.transcripts[&item].words.len(), 6);
+    assert_eq!(s.history.undo.len(), before + 1, "one undo step");
+    s.execute("edit.undo", json!({})).unwrap();
+    assert!(s.project.transcripts.is_empty());
+}
+
+/// Waits until it is cancelled.
+struct Stubborn;
+impl filmcraft_speech::Transcriber for Stubborn {
+    fn id(&self) -> String {
+        "stubborn".into()
+    }
+    fn transcribe(
+        &self,
+        _: &[f32],
+        _: &filmcraft_speech::Options,
+        progress: filmcraft_speech::ProgressFn,
+    ) -> Result<Transcript, filmcraft_speech::SpeechError> {
+        while progress(0.1, "waiting") {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        Err(filmcraft_speech::SpeechError::Cancelled)
+    }
+}
+
+#[test]
+fn background_transcribe_cancel_changes_nothing() {
+    let (mut s, item, _) = session();
+    s.transcriber = Some(Arc::new(Stubborn));
+    let (rev, before) = (s.revision, s.history.undo.len());
+    let r = s.execute("transcript.generate", json!({"items": [item.0], "background": true})).unwrap();
+    s.execute("jobs.cancel", json!({"job": r["job"]})).unwrap();
+    wait_job(&mut s);
+    assert!(s.project.transcripts.is_empty());
+    assert_eq!((s.revision, s.history.undo.len()), (rev, before));
+}

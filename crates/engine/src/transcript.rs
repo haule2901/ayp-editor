@@ -117,10 +117,138 @@ fn item_audio(s: &Session, item: ItemId) -> Option<Vec<f32>> {
     if !src.info().has_audio() {
         return None;
     }
+    audio_of(&src, dur)
+}
+
+/// Mono 16 kHz audio of the first `dur` of a source.
+fn audio_of(src: &filmcraft_media::SharedSource, dur: Tick) -> Option<Vec<f32>> {
     let sr = filmcraft_speech::SAMPLE_RATE;
     let len = dur.to_units_floor(sr as i64).max(0) as usize;
     let buf = src.audio(0, len, sr).ok()?;
     Some(filmcraft_speech::downmix(&buf.channels))
+}
+
+type Done = Vec<(ItemId, Transcript)>;
+
+/// A running background `transcript.generate`; applied by [`poll`] when it finishes.
+pub struct PendingTranscribe {
+    pub job: u64,
+    pub results: Arc<std::sync::Mutex<Option<Done>>>,
+}
+
+fn lock<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// `transcript.generate {background: true}`: decode and transcribe in a named thread (`jobs.list`
+/// shows the progress, `jobs.cancel` stops it), apply everything as one undo step in [`poll`].
+fn generate_background(s: &mut Session, items: Vec<ItemId>, t: Arc<dyn Transcriber>, opts: Options) -> Result<Value> {
+    let mut work = Vec::new();
+    let mut skipped = Vec::new();
+    for item in items {
+        let dur = match s.project.item(item).map(|i| &i.kind) {
+            Some(ItemKind::Media(m)) => Some(m.duration()),
+            _ => None,
+        };
+        match (dur, s.source(item)) {
+            (Some(d), Some(src)) if src.info().has_audio() => work.push((item, src, d)),
+            _ => skipped.push(item.0),
+        }
+    }
+    if work.is_empty() {
+        return Err(EngineError::Other("none of the clips has audio to transcribe".into()));
+    }
+    const PER_ITEM: u64 = 1000;
+    let id = s.jobs.iter().map(|j| j.id).max().unwrap_or(0) + 1;
+    let label = format!("Transcribe ({} clip{})", work.len(), if work.len() == 1 { "" } else { "s" });
+    let job = crate::Job { id, label, progress: Default::default(), result: Default::default() };
+    job.progress.total.store(work.len() as u64 * PER_ITEM, std::sync::atomic::Ordering::Relaxed);
+    let results: Arc<std::sync::Mutex<Option<Done>>> = Arc::default();
+    let (prog, res, out) = (job.progress.clone(), job.result.clone(), results.clone());
+    let run = move || {
+        use std::sync::atomic::Ordering;
+        let t0 = web_time::Instant::now();
+        let mut done: Done = Vec::new();
+        let mut err = None;
+        for (k, (item, src, dur)) in work.iter().enumerate() {
+            let Some(audio) = audio_of(src, *dur) else { continue };
+            let base = k as u64 * PER_ITEM;
+            let mut cb = |f: f32, _: &str| {
+                prog.done.store(base + (f.clamp(0.0, 1.0) * PER_ITEM as f32) as u64, Ordering::Relaxed);
+                !prog.cancel.load(Ordering::Relaxed)
+            };
+            match t.transcribe(&audio, &opts, &mut cb) {
+                Ok(mut tr) => {
+                    tr.normalize();
+                    done.push((*item, tr));
+                    prog.done.store(base + PER_ITEM, Ordering::Relaxed);
+                }
+                Err(SpeechError::Cancelled) => {
+                    err = Some("stopped".to_string());
+                    break;
+                }
+                Err(e) => {
+                    err = Some(e.to_string());
+                    break;
+                }
+            }
+        }
+        if err.is_none() && done.is_empty() {
+            err = Some("none of the clips has audio to transcribe".into());
+        }
+        let secs = t0.elapsed().as_secs_f64();
+        *lock(&prog.status) = match &err {
+            Some(e) if e == "stopped" => "Stopped: nothing was changed".into(),
+            Some(e) => e.clone(),
+            None => format!("Transcribed {} clip(s) ({secs:.1}s)", done.len()),
+        };
+        let r = match err {
+            Some(e) => Err(e),
+            None => {
+                let frames = done.len() as u64;
+                *lock(&out) = Some(done);
+                Ok(filmcraft_export::Report { path: String::new(), frames, seconds: secs, bytes: 0, render_fps: 0.0, extra_files: Vec::new() })
+            }
+        };
+        *lock(&res) = Some(r);
+        prog.finished.store(true, Ordering::Relaxed);
+    };
+    let run = crate::export_tools::guard_job(job.progress.clone(), job.result.clone(), run);
+    s.jobs.push(job);
+    s.transcript_jobs.push(PendingTranscribe { job: id, results });
+    if cfg!(target_arch = "wasm32") {
+        run();
+        poll(s);
+    } else {
+        std::thread::Builder::new().name("filmcraft-transcribe".into()).spawn(run).map_err(|e| EngineError::Other(e.to_string()))?;
+    }
+    Ok(json!({"job": id, "skipped": skipped}))
+}
+
+/// Apply finished background transcriptions (one undo step each); a cancelled or failed job changes
+/// nothing. Called once per UI frame from [`Session::poll_persistence`].
+pub fn poll(s: &mut Session) {
+    use std::sync::atomic::Ordering;
+    let mut i = 0;
+    while i < s.transcript_jobs.len() {
+        let job = s.jobs.iter().find(|j| j.id == s.transcript_jobs[i].job);
+        if !job.is_none_or(|j| j.progress.finished.load(Ordering::Relaxed)) {
+            i += 1;
+            continue;
+        }
+        let cancelled = job.is_some_and(|j| j.progress.cancel.load(Ordering::Relaxed));
+        let pj = s.transcript_jobs.remove(i);
+        let Some(done) = lock(&pj.results).take().filter(|_| !cancelled) else { continue };
+        let r = s.edit("Transcribe", move |pr, _| {
+            for (i, t) in done {
+                pr.transcripts.insert(i, Arc::new(t));
+            }
+            Ok(())
+        });
+        if let Err(e) = r {
+            s.error_toast("transcript.generate", format!("Transcribe: {e}"));
+        }
+    }
 }
 
 fn speech_err(e: SpeechError) -> EngineError {
@@ -161,6 +289,9 @@ fn generate(s: &mut Session, p: &Value) -> Result<Value> {
         diarize: bool_p(p, "diarize").unwrap_or(ma.speaker_labeling != "off"),
         max_speakers: u64_p(p, "maxSpeakers").map(|n| n.clamp(1, 32) as usize).unwrap_or(Options::default().max_speakers),
     };
+    if bool_p(p, "background").unwrap_or(false) {
+        return generate_background(s, items, t, opts);
+    }
     let mut done: Vec<(ItemId, Transcript)> = Vec::new();
     let mut skipped = Vec::new();
     for item in items {
@@ -544,7 +675,7 @@ pub fn commands() -> Vec<CommandSpec> {
             "transcript.generate",
             "Transcribe…",
             &["Sequence", "Transcript"],
-            r#"{"items":[id]?,"model":"whisper-base"?,"language":"en|auto"?,"diarize":bool?,"maxSpeakers":n?}"#,
+            r#"{"items":[id]?,"model":"whisper-base"?,"language":"en|auto"?,"diarize":bool?,"maxSpeakers":n?,"background":bool=false}"#,
             can_transcribe,
             generate,
             true,

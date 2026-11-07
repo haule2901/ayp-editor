@@ -363,7 +363,7 @@ mod tests {
         assert_eq!(ids.len(), n);
     }
     #[test]
-    fn transcribing_from_the_finder_warns_before_it_runs() {
+    fn transcribing_from_the_finder_starts_a_job() {
         let (mut app, ctx) = super::super::library::tests::demo_transcribing();
         let before = app.session.history.undo.len();
         app.ui.ayp_palette = Some("chep loi".into());
@@ -372,9 +372,8 @@ mod tests {
         run(&mut app, &ctx, h);
         assert!(app.ui.ayp_palette.is_none());
         assert!(app.ui.status.starts_with("Đang chép lời"), "{}", app.ui.status);
-        assert_eq!(app.session.history.undo.len(), before, "not run in the click frame");
-        super::super::library::run_pending(&mut app, &ctx);
-        assert_eq!(app.session.history.undo.len(), before + 1, "{}", app.ui.status);
+        assert_eq!(app.session.history.undo.len(), before, "not applied in the click frame");
+        assert!(app.ayp_transcribing.is_some());
     }
     #[test]
     fn the_same_command_and_params_are_listed_once() {
