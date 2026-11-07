@@ -93,7 +93,8 @@ fn candidates(app: &FilmcraftApp) -> Vec<Cand> {
             continue;
         }
         let enabled = match item.kind {
-            Kind::Ai => Err("Sẽ có ở bản sau (AI)".to_string()),
+            // it asks the AI chat, which says by itself when there is no key
+            Kind::Ai => Ok(()),
             // it only opens its tab's panel, which works whatever the command's state
             Kind::Panel => Ok(()),
             Kind::Run => state_of(app, item.cmd),
@@ -382,10 +383,10 @@ mod tests {
         assert_eq!(n, 1);
     }
     #[test]
-    fn ai_hits_say_they_come_later() {
+    fn ai_hits_can_be_run() {
         let app = FilmcraftApp::new(filmcraft_engine::Session::default());
         let h = search(&app, "chia cum phu de", 3).into_iter().find(|h| h.id == "transcript.captionsFromChunks").expect("listed");
-        assert_eq!(h.enabled, Err("Sẽ có ở bản sau (AI)".to_string()));
+        assert_eq!(h.enabled, Ok(()));
     }
     #[test]
     fn unrelated_words_find_nothing() {

@@ -478,6 +478,12 @@ pub struct UiState {
     /// The "Tìm lệnh…" finder: None = closed, Some(text typed). Never saved.
     #[serde(skip)]
     pub ayp_palette: Option<String>,
+    /// Chỉ chỗ: the AYP item (its `key`) outlined for 1.5 s, and since when. Never saved.
+    #[serde(skip)]
+    pub ayp_flash: Option<(String, web_time::Instant)>,
+    /// Where the AYP right column was drawn this frame (the cover while the AI works leaves it free).
+    #[serde(skip)]
+    pub ayp_side_rect: Option<egui::Rect>,
     /// The header bar (Home, Import, Edit, Export, workspaces). An app that embeds FilmCraft can hide it.
     #[serde(default = "shown")]
     pub show_header: bool,
@@ -1009,6 +1015,8 @@ impl Default for UiState {
             ayp_tab: default_ayp_tab(),
             ayp_side: AypSideTab::default(),
             ayp_palette: None,
+            ayp_flash: None,
+            ayp_side_rect: None,
             dark: true,
             show_scopes: false,
             status: String::new(),

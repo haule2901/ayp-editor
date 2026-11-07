@@ -6,8 +6,10 @@
 //! one undo step (`Session::group_begin` / `group_end`). History is append-only: assistant content is
 //! pushed back exactly as received and no earlier message is ever changed.
 pub mod api;
+pub mod cards;
 pub mod prompt;
 pub mod tools;
+pub mod view;
 
 use crate::{FilmcraftApp, HttpPost, HttpRequest};
 use serde_json::{Value, json};
@@ -17,7 +19,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError};
 use tools::Outcome;
 
-const BUSY: &str = "AI đang làm — bấm Dừng trước";
+pub(crate) const BUSY: &str = "AI đang làm — bấm Dừng trước";
 const NO_NET: &str = "App này chưa nối mạng cho AI";
 const STOPPED: &str = "Người dùng đã dừng";
 const NOT_CHOSEN: &str = "Người dùng không chọn";
@@ -116,6 +118,15 @@ enum Start<'a> {
 pub struct Chat {
     pub cards: Vec<Card>,
     pub model: String,
+    /// The message being typed.
+    pub input: String,
+    /// An IME is composing in the box: Enter belongs to it.
+    pub composing: bool,
+    /// ⚙ Cài đặt AI is open; its key field (never shown back), the model field and the last note.
+    pub settings_open: bool,
+    pub key_field: String,
+    pub model_field: String,
+    pub note: String,
     messages: Vec<Value>,
     phase: Phase,
     turn: Option<Turn>,
@@ -139,6 +150,12 @@ impl Default for Chat {
         Self {
             cards: Vec::new(),
             model: api::DEFAULT_MODEL.to_string(),
+            input: String::new(),
+            composing: false,
+            settings_open: false,
+            key_field: String::new(),
+            model_field: String::new(),
+            note: String::new(),
             messages: Vec::new(),
             phase: Phase::Idle,
             turn: None,
@@ -344,7 +361,7 @@ fn on_reply(app: &mut FilmcraftApp, msg: &Value) {
 }
 
 /// The Vietnamese label of a command id (the id itself when it has none).
-fn command_label(id: &str) -> String {
+pub(crate) fn command_label(id: &str) -> String {
     let en = filmcraft_engine::find_command(id).map(|c| c.label).or_else(|| crate::menus::UI_COMMANDS.iter().find(|c| c.id == id).map(|c| c.label));
     en.map_or_else(|| id.to_string(), |l| crate::ayp::vi::vi(l).to_string())
 }

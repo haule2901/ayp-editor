@@ -1,4 +1,4 @@
-//! The AYP right column: Thông số (the classic Properties panel) | AI (placeholder until plan 2).
+//! The AYP right column: Thông số (the classic Properties panel) | AI (the chat).
 use crate::FilmcraftApp;
 use crate::state::AypSideTab;
 use egui::{Rect, vec2};
@@ -8,6 +8,8 @@ const TAB_H: f32 = 28.0;
 pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let t = app.tokens;
     let ctx = ui.ctx().clone();
+    // the cover that keeps the pointer off the rest of the window while the AI works leaves this free
+    app.ui.ayp_side_rect = Some(rect);
     let w = (rect.width() - 12.0) / 2.0;
     for (i, (tab, id, label)) in [(AypSideTab::Props, "ayp.side.props", "Thông số"), (AypSideTab::Ai, "ayp.side.ai", "AI")].into_iter().enumerate() {
         let r = Rect::from_min_size(egui::pos2(rect.left() + 6.0 + i as f32 * w, rect.top() + 4.0), vec2(w, TAB_H)).shrink(2.0);
@@ -28,23 +30,6 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
             app.auto.add_response("ayp.hint.selectClip", &l, "Chọn một clip để xem thông số");
         }
         AypSideTab::Props => crate::panels::show(app, ui, crate::dock::PanelKind::Properties, body),
-        AypSideTab::Ai => {
-            let r = Rect::from_min_size(body.min + vec2(6.0, 4.0), vec2(body.width() - 12.0, 60.0));
-            ui.put(r, egui::Label::new(egui::RichText::new("Khung chat AI sẽ có ở bản kế tiếp. Trong lúc chờ: bấm Tìm lệnh…").color(t.text_dim)));
-            let mut below = r.bottom();
-            if let Some(port) = app.control_busy_port {
-                let text = format!("Cổng {port} đang bận — AI/MCP đang nối với app khác");
-                let r = Rect::from_min_size(egui::pos2(body.left() + 6.0, below + 4.0), vec2(body.width() - 12.0, 34.0));
-                let l = ui.put(r, egui::Label::new(egui::RichText::new(&text).color(t.text)));
-                app.auto.add_response("ayp.side.portBusy", &l, &text);
-                below = r.bottom();
-            }
-            let b = Rect::from_min_size(egui::pos2(body.left() + 6.0, below + 6.0), vec2(110.0, 28.0));
-            let resp = ui.put(b, egui::Button::new("Tìm lệnh…")).on_hover_text("Tìm và chạy mọi lệnh (⌘⇧P)");
-            app.auto.add_response("ayp.side.openPalette", &resp, "Tìm lệnh…");
-            if resp.clicked() {
-                let _ = super::run(app, &ctx, "ayp.palette.open", "{}");
-            }
-        }
+        AypSideTab::Ai => super::chat::view::show(app, ui, body),
     }
 }

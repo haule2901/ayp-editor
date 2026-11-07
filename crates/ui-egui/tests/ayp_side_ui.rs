@@ -100,8 +100,8 @@ fn switching_to_ai() {
     assert_eq!(d.h.state().ui.ayp_side, AypSideTab::Props);
     d.click("ayp.side.ai");
     assert_eq!(d.h.state().ui.ayp_side, AypSideTab::Ai);
-    assert!(d.has("ayp.side.openPalette"));
-    d.click("ayp.side.openPalette");
+    assert!(d.has("ayp.chat.input"));
+    d.click("ayp.find");
     assert!(d.has("ayp.palette"), "Tìm lệnh… opened: {}", d.h.state().ui.status);
     assert_eq!(d.h.state().ui.ayp_palette.as_deref(), Some(""));
     d.call("ui.key", json!({"key": "Escape"}));

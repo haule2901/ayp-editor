@@ -834,7 +834,10 @@ impl FilmcraftApp {
 
     /// AYPEditor: remember the AI chat's model in `aypeditor.json`.
     pub(crate) fn remember_ai_model(&self) {
-        if let Some(m) = self.ayp_marker_path() {
+        // plain FilmCraft has no aypeditor.json
+        if self.ayp_default
+            && let Some(m) = self.ayp_marker_path()
+        {
             self.set_ayp_marker(m, &[("aiModel", self.ayp_chat.model.clone().into())]);
         }
     }
@@ -1969,6 +1972,7 @@ impl FilmcraftApp {
         }
         // the Timeline has had its chance to place a file drop this frame; anything left stays a bin import
         self.pending_timeline_drop = None;
+        ayp::chat::view::cover(self, &ctx);
         panels::dialogs::show(self, &ctx);
         ayp::palette::show(self, &ctx);
         if !self.ui.show_status_bar {

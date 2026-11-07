@@ -445,6 +445,7 @@ fn the_model_is_remembered_in_aypeditor_json() {
     std::fs::write(dir.join("aypeditor.json"), r#"{"introduced":true,"workspace":"AYP"}"#).unwrap();
     let (mut app, _ctx) = demo();
     app.session.prefs_path = Some(dir.join("prefs.json"));
+    app.ayp_default = true;
     set_model(&mut app, "  claude-opus-5-5 ");
     assert_eq!(app.ayp_chat.model, "claude-opus-5-5");
     let v: Value = serde_json::from_slice(&std::fs::read(dir.join("aypeditor.json")).unwrap()).unwrap();

@@ -108,7 +108,13 @@ fn run_item(app: &mut FilmcraftApp, ctx: &egui::Context, item: &Item) {
             }
             app.ui.status = "Chọn trong bảng bên dưới".into();
         }
-        Kind::Ai => {}
+        // the item's label is the request; the answer shows in the AI tab
+        Kind::Ai => {
+            app.ui.ayp_side = crate::state::AypSideTab::Ai;
+            if let Err(e) = super::chat::send(app, item.label) {
+                app.ui.status = format!("Chưa làm được: {e}");
+            }
+        }
         Kind::Run => {
             // Lift / Extract act on the words picked in the embedded Text panel, as its own buttons do.
             let picked;
@@ -213,16 +219,20 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let cap = if tab.items.len() > 8 { 0.6 } else { 0.45 };
     let list_h = if tab.embed.is_some() { want.min(left * cap) } else { left };
     let mut list = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(egui::pos2(rect.left() + 6.0, y), vec2(w - 12.0, list_h))));
+    let flash = super::chat::view::flashing(app);
     egui::ScrollArea::vertical().id_salt("ayp.items").auto_shrink([false, false]).show(&mut list, |ui| {
         for item in tab.items {
             // A command that cannot run right now is dimmed but stays clickable, so the click explains why.
             let ink = if item.kind == Kind::Ai || app.session.is_enabled(item.cmd) { t.text } else { t.text_dim };
             let button = egui::Button::new(egui::RichText::new(item.label).color(ink)).min_size(vec2(ui.available_width(), ROW_H));
-            let resp = ui.add_enabled(item.kind != Kind::Ai, button);
-            let resp = match item.kind {
-                Kind::Ai => resp.on_disabled_hover_text("Sẽ có ở bản sau (AI)"),
-                _ => resp.on_hover_text(item.cmd),
-            };
+            let resp = ui.add(button);
+            let resp = if item.kind == Kind::Ai { resp.on_hover_text("Nhờ AI làm") } else { resp.on_hover_text(item.cmd) };
+            // Chỉ chỗ: outline the item the AI named, and bring it into view
+            if flash.as_deref() == Some(item.key) {
+                ui.painter().rect_stroke(resp.rect, 4.0, egui::Stroke::new(2.0, t.accent), egui::StrokeKind::Outside);
+                resp.scroll_to_me(Some(egui::Align::Center));
+                ctx.request_repaint_after(std::time::Duration::from_millis(100));
+            }
             // Scrolled-out buttons are not registered: a click on their rect would land on the toolbar below.
             if ui.clip_rect().contains(resp.rect.center()) {
                 app.auto.add_response(&format!("ayp.item.{}", item.key), &resp, item.label);

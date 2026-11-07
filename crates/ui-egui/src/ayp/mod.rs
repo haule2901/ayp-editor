@@ -20,6 +20,7 @@ pub(crate) fn state_json(app: &crate::FilmcraftApp) -> serde_json::Value {
         "workspace": app.ui.workspace,
         "tab": app.ui.ayp_tab,
         "side": side_name(app.ui.ayp_side),
+        "flash": app.ui.ayp_flash.as_ref().filter(|(_, since)| since.elapsed().as_secs_f32() < 1.5).map(|(key, _)| key),
         "palette": app.ui.ayp_palette,
         "selection": app.session.state.selection.iter().map(|c| c.0).collect::<Vec<_>>(),
         "playhead": app.session.playhead().0,

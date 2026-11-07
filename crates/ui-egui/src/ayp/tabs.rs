@@ -12,7 +12,7 @@ pub enum Kind {
     Run,
     /// Invoke nothing: focus the tab's `embed` panel and show a hint (the user must pick something there).
     Panel,
-    /// Greyed out: "Sẽ có ở bản sau (AI)". Plan 2 enables it.
+    /// Asks the AI chat: the item's label is the request.
     Ai,
 }
 
