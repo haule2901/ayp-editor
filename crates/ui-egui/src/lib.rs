@@ -416,6 +416,8 @@ pub struct FilmcraftApp {
     pub control_busy_port: Option<u16>,
     /// Id of the running Chép lời job.
     pub(crate) ayp_transcribing: Option<u64>,
+    /// The AI tab's conversation with Claude.
+    pub ayp_chat: crate::ayp::chat::Chat,
     /// The AYP layout as last saved (or loaded); a different dock means a change to save.
     ayp_saved: Option<dock::Layout>,
     /// The layout seen last frame and when it last changed (for the autosave debounce).
@@ -643,6 +645,7 @@ impl FilmcraftApp {
             ayp_default: false,
             control_busy_port: None,
             ayp_transcribing: None,
+            ayp_chat: Default::default(),
             ayp_saved: None,
             ayp_seen: None,
             workspaces,
@@ -802,6 +805,9 @@ impl FilmcraftApp {
                 // AYPEditor's own last workspace (FilmCraft AYP owns `current` in the shared workspaces.json);
                 // AYP on the first launch and when the marker names none.
                 let last = self.ayp_marker_path().and_then(|m| std::fs::read(m).ok()).and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok());
+                if let Some(m) = last.as_ref().and_then(|v| v["aiModel"].as_str()).filter(|m| !m.trim().is_empty()) {
+                    self.ayp_chat.model = m.trim().to_string();
+                }
                 let w = last.as_ref().and_then(|v| v["workspace"].as_str()).and_then(|n| dock::find(&self.workspaces, n)).unwrap_or_else(|| "AYP".into());
                 self.set_workspace(&w);
             } else if let Some(w) = dock::find(&self.workspaces, &self.workspaces.current) {
@@ -811,8 +817,8 @@ impl FilmcraftApp {
         self.applied_prefs = Some(p);
     }
 
-    /// `aypeditor.json` (`{"introduced":true,"workspace":<name>}`): AYPEditor's own last workspace. Only
-    /// inside the session's own data directory.
+    /// `aypeditor.json` (`{"introduced":true,"workspace":<name>,"aiModel":<model>}`): AYPEditor's own
+    /// last workspace and AI model. Only inside the session's own data directory.
     fn ayp_marker_path(&self) -> Option<std::path::PathBuf> {
         Some(self.session.prefs_path.as_ref()?.parent()?.join("aypeditor.json"))
     }
@@ -822,9 +828,26 @@ impl FilmcraftApp {
         if self.ayp_default
             && let Some(m) = self.ayp_marker_path()
         {
-            // ponytail: a failed write just means the previous workspace opens next launch
-            let _ = std::fs::write(m, serde_json::json!({"introduced": true, "workspace": self.ui.workspace}).to_string());
+            self.set_ayp_marker(m, &[("introduced", true.into()), ("workspace", self.ui.workspace.clone().into())]);
         }
+    }
+
+    /// AYPEditor: remember the AI chat's model in `aypeditor.json`.
+    pub(crate) fn remember_ai_model(&self) {
+        if let Some(m) = self.ayp_marker_path() {
+            self.set_ayp_marker(m, &[("aiModel", self.ayp_chat.model.clone().into())]);
+        }
+    }
+
+    /// Set `pairs` in `aypeditor.json`, keeping the keys it already has.
+    fn set_ayp_marker(&self, path: std::path::PathBuf, pairs: &[(&str, serde_json::Value)]) {
+        let old = std::fs::read(&path).ok().and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok());
+        let mut v = old.filter(serde_json::Value::is_object).unwrap_or_else(|| serde_json::json!({}));
+        for (k, x) in pairs {
+            v[*k] = x.clone();
+        }
+        // ponytail: a failed write just means the previous workspace / model opens next launch
+        let _ = std::fs::write(path, v.to_string());
     }
 
     /// AYPEditor: keep the AYP workspace's layout as the user left it. A change is written once it
@@ -1884,6 +1907,7 @@ impl FilmcraftApp {
         self.apply_prefs(&ctx);
         self.autosave_ayp_layout(&ctx);
         ayp::library::run_pending(self, &ctx);
+        ayp::chat::poll(self, &ctx);
         #[cfg(not(target_arch = "wasm32"))]
         self.tick_media_refresh(&ctx);
         for ev in self.session.drain_events() {
