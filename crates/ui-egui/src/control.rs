@@ -64,6 +64,13 @@ fn err(e: impl std::fmt::Display) -> Outcome {
     Outcome::Done(json!({"ok": false, "error": e.to_string()}))
 }
 
+fn chat_done(r: Result<(), String>) -> Outcome {
+    match r {
+        Ok(()) => ok(json!({})),
+        Err(e) => err(e),
+    }
+}
+
 /// Modifier flags from `{modifiers: {ctrl, command, shift, alt}}` (or the same keys at the top
 /// level), as the OS would report them pressed.
 fn modifiers(p: &Value) -> egui::Modifiers {
@@ -156,6 +163,40 @@ pub fn handle(app: &mut FilmcraftApp, ctx: &egui::Context, req: &ControlRequest)
                 app.ui.ayp_side = sd;
             }
             ok(json!({"tab": app.ui.ayp_tab, "side": crate::ayp::side_name(app.ui.ayp_side)}))
+        }
+        "ui.ayp.run" => {
+            let Some(key) = s("key") else { return err("missing `key`") };
+            // keys are unique across the tabs (tabs::keys_are_unique)
+            let Some(item) = crate::ayp::tabs::TABS.iter().flat_map(|t| t.items).find(|i| i.key == key) else {
+                return err(format!("unknown key `{key}`"));
+            };
+            crate::ayp::library::click_item(app, ctx, item);
+            ok(json!({"status": app.ui.status}))
+        }
+        "ui.ayp.chat.state" => ok(json!({
+            "busy": app.ayp_chat.busy(),
+            "model": app.ayp_chat.model,
+            "cards": app.ayp_chat.cards,
+        })),
+        "ui.ayp.chat.send" => {
+            let Some(text) = s("text") else { return err("missing `text`") };
+            chat_done(crate::ayp::chat::send(app, text))
+        }
+        "ui.ayp.chat.stop" => {
+            crate::ayp::chat::stop(app);
+            ok(json!({}))
+        }
+        "ui.ayp.chat.plan" => {
+            let Some(approve) = p.get("approve").and_then(Value::as_bool) else { return err("missing `approve` (true | false)") };
+            chat_done(crate::ayp::chat::decide_plan(app, approve))
+        }
+        "ui.ayp.chat.choose" => {
+            let Some(option) = p.get("option").and_then(Value::as_u64) else { return err("missing `option` (a number)") };
+            chat_done(crate::ayp::chat::choose(app, usize::try_from(option).unwrap_or(usize::MAX)))
+        }
+        "ui.ayp.chat.undoTurn" => {
+            let Some(card) = p.get("card").and_then(Value::as_u64) else { return err("missing `card` (a number)") };
+            chat_done(crate::ayp::chat::undo_turn(app, ctx, usize::try_from(card).unwrap_or(usize::MAX)))
         }
         "perf.stats" => ok(crate::perf::stats(app)),
         "ui.elements" => {

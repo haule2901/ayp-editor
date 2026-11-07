@@ -69,3 +69,107 @@ fn open_switches_tab_and_side_and_rejects_unknown() {
     let r2 = call(&mut app, &ctx, "ui.ayp.state", json!({}))["result"].clone();
     assert_eq!(r2["tab"], "media");
 }
+
+#[test]
+fn run_clicks_an_item_like_the_button_and_rejects_unknown() {
+    let (mut app, ctx) = app();
+    let before = app.session.history.undo.len();
+    let v = call(&mut app, &ctx, "ui.ayp.run", json!({"key": "markers.add"}));
+    assert_eq!(v["ok"], true, "{v}");
+    assert_eq!(app.session.history.undo.len(), before + 1, "one click, one undo step");
+    for bad in [json!({"key": "nope"}), json!({})] {
+        let v = call(&mut app, &ctx, "ui.ayp.run", bad);
+        assert_eq!(v["ok"], false, "{v}");
+    }
+}
+
+fn chat_app(replies: Vec<serde_json::Value>) -> (FilmcraftApp, egui::Context) {
+    use filmcraft_ui_egui::{HttpPost, HttpResponse};
+    use std::sync::{Arc, Mutex};
+    let (mut app, ctx) = app();
+    let q = Arc::new(Mutex::new(std::collections::VecDeque::from(replies)));
+    let post: HttpPost = Arc::new(move |_| {
+        let content = q.lock().unwrap().pop_front().unwrap_or(json!([{"type": "text", "text": "hết"}]));
+        let stop = if content.to_string().contains("tool_use") { "tool_use" } else { "end_turn" };
+        let body = json!({"id": "m", "type": "message", "role": "assistant", "content": content, "stop_reason": stop});
+        Ok(HttpResponse { status: 200, retry_after: None, body: body.to_string() })
+    });
+    app.hooks.http_post = Some(post);
+    app.hooks.secret_get = Some(Box::new(|k| (k == "anthropic").then(|| "sk-ant-SECRET-test-key".to_string())));
+    (app, ctx)
+}
+
+fn settle(app: &mut FilmcraftApp, ctx: &egui::Context) {
+    for _ in 0..3000 {
+        filmcraft_ui_egui::ayp::chat::poll(app, ctx);
+        if !app.ayp_chat.busy() {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    panic!("chat never settled");
+}
+
+#[test]
+fn chat_methods_send_stop_and_report_state() {
+    let (mut app, ctx) = chat_app(vec![json!([{"type": "text", "text": "Xin chào anh"}])]);
+    let s = call(&mut app, &ctx, "ui.ayp.chat.state", json!({}))["result"].clone();
+    assert_eq!((s["busy"].as_bool(), s["model"].as_str()), (Some(false), Some("claude-sonnet-5-5")));
+    assert_eq!(s["cards"], json!([]));
+
+    let v = call(&mut app, &ctx, "ui.ayp.chat.send", json!({"text": "Chào em"}));
+    assert_eq!(v["ok"], true, "{v}");
+    assert_eq!(call(&mut app, &ctx, "ui.ayp.chat.state", json!({}))["result"]["busy"], true);
+    // a second message while the turn runs is refused
+    let v = call(&mut app, &ctx, "ui.ayp.chat.send", json!({"text": "nữa"}));
+    assert_eq!(v["ok"], false, "{v}");
+    settle(&mut app, &ctx);
+    let s = call(&mut app, &ctx, "ui.ayp.chat.state", json!({}))["result"].clone();
+    assert_eq!(s["busy"], false);
+    assert_eq!(s["cards"][0], json!({"User": "Chào em"}), "{s}");
+    assert_eq!(s["cards"][1], json!({"Text": "Xin chào anh"}), "{s}");
+
+    for bad in [json!({}), json!({"text": "  "})] {
+        assert_eq!(call(&mut app, &ctx, "ui.ayp.chat.send", bad)["ok"], false);
+    }
+    assert_eq!(call(&mut app, &ctx, "ui.ayp.chat.stop", json!({}))["ok"], true, "stop when idle is harmless");
+}
+
+#[test]
+fn chat_state_never_contains_the_key() {
+    let (mut app, ctx) = chat_app(vec![json!([{"type": "text", "text": "ok"}])]);
+    call(&mut app, &ctx, "ui.ayp.chat.send", json!({"text": "Chào"}));
+    settle(&mut app, &ctx);
+    app.ayp_chat.key_field = "sk-ant-SECRET-typed".into();
+    let all = [call(&mut app, &ctx, "ui.ayp.chat.state", json!({})).to_string(), call(&mut app, &ctx, "ui.ayp.state", json!({})).to_string()];
+    for a in all {
+        assert!(!a.contains("SECRET"), "{a}");
+    }
+}
+
+#[test]
+fn plan_choice_and_undo_methods_need_something_to_answer() {
+    let plan = json!([{"type": "tool_use", "id": "p1", "name": "propose_plan", "input": {"title": "T", "steps": ["a"]}}]);
+    let add = json!([{"type": "tool_use", "id": "t1", "name": "run_command", "input": {"id": "markers.add", "params": {}}}]);
+    let (mut app, ctx) = chat_app(vec![plan, add, json!([{"type": "text", "text": "Xong"}])]);
+    // nothing waits yet
+    for (m, p) in [("ui.ayp.chat.plan", json!({"approve": true})), ("ui.ayp.chat.choose", json!({"option": 0})), ("ui.ayp.chat.undoTurn", json!({"card": 0}))] {
+        assert_eq!(call(&mut app, &ctx, m, p)["ok"], false, "{m}");
+    }
+    // missing / wrong-typed params
+    for (m, p) in [("ui.ayp.chat.plan", json!({})), ("ui.ayp.chat.choose", json!({})), ("ui.ayp.chat.undoTurn", json!({"card": "x"}))] {
+        assert_eq!(call(&mut app, &ctx, m, p)["ok"], false, "{m}");
+    }
+    call(&mut app, &ctx, "ui.ayp.chat.send", json!({"text": "Thêm marker"}));
+    settle(&mut app, &ctx);
+    let before = app.session.history.undo.len();
+    let v = call(&mut app, &ctx, "ui.ayp.chat.plan", json!({"approve": true}));
+    assert_eq!(v["ok"], true, "{v}");
+    settle(&mut app, &ctx);
+    assert_eq!(app.session.history.undo.len(), before + 1, "the turn is one undo step");
+    let s = call(&mut app, &ctx, "ui.ayp.chat.state", json!({}))["result"].clone();
+    let i = s["cards"].as_array().unwrap().iter().position(|c| c.get("Result").is_some()).expect("a Result card");
+    let v = call(&mut app, &ctx, "ui.ayp.chat.undoTurn", json!({"card": i}));
+    assert_eq!(v["ok"], true, "{v}");
+    assert_eq!(app.session.history.undo.len(), before);
+}

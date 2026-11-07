@@ -34,6 +34,13 @@ Methods (handlers in `crates/ui-egui/src/control.rs`):
 | `ui.ayp.state` | – | What the AYP interface shows: `{workspace, tab, side: "props"\|"ai", palette: string\|null, selection: [clipId], playhead: ticks, sequence: itemId\|null}` |
 | `ui.ayp.tabs` | – | The ten left tabs built from the same table as the panel: `[{id, label, items: [{key, cmd, params, label, kind: "run"\|"panel"\|"ai"}]}]`. `kind` `ai` buttons are greyed out for people and meant for the AI to run with `engine.execute` |
 | `ui.ayp.open` | `{tab?, side?: "props"\|"ai"}` | Switch to the AYP workspace if elsewhere, then open that left tab and/or right tab. Unknown tab or side returns an error and changes nothing |
+| `ui.ayp.run` | `{key}` | Press the AYP button with that `key` (the keys `ui.ayp.tabs` lists), exactly as a click would. Returns `{status}`, the status line afterwards. An unknown key returns an error |
+| `ui.ayp.chat.state` | – | The AI chat: `{busy, model, cards: [...]}`. Each card is a one-key object named after its kind (`{"User": "text"}`, `{"Text": "text"}`, `Plan`, `Choice`, `Doing`, `Result`, `Error`). The API key is never part of it |
+| `ui.ayp.chat.send` | `{text}` | Start an AI turn with this message. Error if a turn is running or the text is empty |
+| `ui.ayp.chat.stop` | – | Stop the running turn (nothing happens when idle) |
+| `ui.ayp.chat.plan` | `{approve: bool}` | Approve or reject the plan the chat is waiting on. Error if none is waiting |
+| `ui.ayp.chat.choose` | `{option: n}` | Pick option `n` (from 0) of the choice the chat is waiting on. Error if none is waiting |
+| `ui.ayp.chat.undoTurn` | `{card: n}` | Undo the whole turn of the `Result` card at index `n`, only while nothing came after it |
 | `ui.click` / `ui.move` | `{id}` or `{x,y}`, `button`, `count`, `modifiers` | synthetic pointer input |
 | `ui.drag` | `{from, to, steps, modifiers}` | press–move–release |
 | `ui.scroll` | `{id|x,y, dx, dy, modifiers}` | wheel / trackpad |
@@ -161,6 +168,16 @@ sequence as tone-mapped SDR.
 `deletePreset {name}`, `shortcuts.export` / `import {path}`, `shortcuts.audit`. Keys use `Cmd` (⌘ /
 Ctrl), `Ctrl` (macOS ⌃), `Alt`, `Shift`. The dialog (Edit ▸ Keyboard Shortcuts…, ⌥⌘K) uses ids
 `shortcuts.*` (`shortcuts.key.K`, `shortcuts.cell.<command>`, `shortcuts.ok`, …).
+
+## AI chat in AYPEditor
+
+The AI tab of the AYP workspace talks to Claude. The methods above (`ui.ayp.chat.*`) do what its buttons do.
+
+- **Key.** Stored in the macOS Keychain (service `vn.ayp.editor`, account `anthropic`); if the Keychain has none, the environment variable `ANTHROPIC_API_KEY` is used. The key is never shown back, logged, or returned over this channel.
+- **Model.** `claude-sonnet-5-5` unless changed in the chat's **⚙ Cài đặt AI** (it is remembered between runs).
+- **Turn.** One request and everything Claude does to answer it. Its edits form one undo step labelled `AI: ` plus the first 40 characters of the message, so one Undo (or `ui.ayp.chat.undoTurn`) takes the whole turn back.
+- **While a turn runs**, manual edits are refused with a "bấm Dừng trước" message; `ui.ayp.chat.stop` ends the turn first.
+- A turn can pause on a plan or a choice; answer with `ui.ayp.chat.plan` or `ui.ayp.chat.choose`.
 
 ## MCP
 `filmcraft-cli mcp` serves MCP on stdio: headless (in-process session; `--demo` / `--project p.fcproj`)
