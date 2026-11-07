@@ -44,6 +44,15 @@ def probe_jobs(app):
     return r.get("result") or []
 
 
+def unsaved_work(pr):
+    """True when the open project has unsaved changes and could hold someone's work. Only an explicit empty
+    project (nothing in the bin, no sequence open: a previous run's leftover) is let through; anything unclear refuses."""
+    if not pr.get("dirty"):
+        return False
+    empty = (pr.get("root") or {}).get("children") == [] and pr.get("activeSequence") is None
+    return not empty
+
+
 def wake():
     """A hidden or sleeping display draws no frames and the app only works on frames: wake it and bring the app forward."""
     subprocess.run(["caffeinate", "-u", "-t", "2"])
@@ -86,7 +95,7 @@ def main():
     if not (tabs.get("ok") and "workspace" in (state.get("result") or {}) and app.call("ui.ayp.chat.state").get("ok")):
         sys.exit(f"the app on port {a.port} is not AYPEditor with the AI chat; refusing to touch it")
     pr = proj.get("result") or {}
-    if pr.get("dirty") and (pr.get("root") or {}).get("children"):  # an empty project (a run's own leftover) loses nothing
+    if unsaved_work(pr):
         sys.exit(f"AYPEditor on port {a.port} has unsaved changes; save or close them first")
 
     wake()
@@ -94,166 +103,186 @@ def main():
     clip = os.path.join(work, "clip.mp4")
     if subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", a.media, "-t", str(a.seconds), "-c", "copy", clip]).returncode:
         shutil.copy(a.media, clip)
-    rows = []
+    try:
+        rows = []
 
-    def row(name, result, note):
-        rows.append((name, result, note.replace("|", "\\|").replace("\n", " ")))
-        print(f"{result:6} {name} — {note}", flush=True)
+        def row(name, result, note):
+            rows.append((name, result, note.replace("|", "\\|").replace("\n", " ")))
+            print(f"{result:6} {name} — {note}", flush=True)
 
-    def run(name, fn):
-        try:
-            row(name, *fn())
-        except Fail as e:
-            row(name, "FAIL", str(e))
-        except Exception as e:  # a crashed check must not hide the others
-            row(name, "FAIL", f"{type(e).__name__}: {e}")
+        def run(name, fn):
+            try:
+                row(name, *fn())
+            except Fail as e:
+                row(name, "FAIL", str(e))
+            except Exception as e:  # a crashed check must not hide the others
+                row(name, "FAIL", f"{type(e).__name__}: {e}")
 
-    app.call("ui.click", {"id": "recovery.later"})  # leftover recovery prompt: Not Now, never Discard
-    app.res("file.newProject", {"name": "aype-chat-check"})
-    item = app.res("file.import", {"paths": [clip]})["items"][0]
-    seq_id = app.res("file.newSequence", {"name": "Kiểm tra chat", "width": 1080, "height": 1920, "fromItem": item})["sequence"]
-    app.res("file.saveAs", {"path": os.path.join(work, "chat-check.fcproj")})
-    q = app.seq()
-    v, au = q["video"][0]["items"][0]["clip"], q["audio"][0]["items"][0]["clip"]
-    base = app.hist()
-    app.ex("timeline.select", {"clips": [v, au]})
-    app.ex("playhead.set", {"seconds": 5})
-    app.call("ui.ayp.open", {"tab": "cut", "side": "ai"})
-
-    # (a) three AYP buttons by key
-    def keys():
-        out = []
-        for key in ("markers.add", "audio.fadeIn", "graphics.newText"):
-            h0 = app.hist()
-            r = app.call("ui.ayp.run", {"key": key})
-            if not r.get("ok"):
-                raise Fail(f"{key}: {r.get('error')}")
-            out.append(f"{key} +{app.hist() - h0} step(s), status {r['result'].get('status')!r}")
-        if app.call("ui.ayp.run", {"key": "no.such.key"}).get("ok"):
-            raise Fail("an unknown key was accepted")
-        if app.hist() <= base:
-            raise Fail("no key changed the project")
-        return "PASS", "; ".join(out) + "; unknown key refused"
-    run("a. ui.ayp.run for three AYP keys", keys)
-    for _ in range(40):
-        if app.hist() <= base:
-            break
-        app.ex("edit.undo")
-
-    # (b) background transcription, the UI keeps answering
-    def bg():
+        app.call("ui.click", {"id": "recovery.later"})  # leftover recovery prompt: Not Now, never Discard
+        app.res("file.newProject", {"name": "aype-chat-check"})
+        item = app.res("file.import", {"paths": [clip]})["items"][0]
+        seq_id = app.res("file.newSequence", {"name": "Kiểm tra chat", "width": 1080, "height": 1920, "fromItem": item})["sequence"]
+        app.res("file.saveAs", {"path": os.path.join(work, "chat-check.fcproj")})
+        q = app.seq()
+        v, au = q["video"][0]["items"][0]["clip"], q["audio"][0]["items"][0]["clip"]
+        base = app.hist()
         app.ex("timeline.select", {"clips": [v, au]})
-        r = app.ex("transcript.generate", {"background": True, "language": "vi", "model": "whisper-large-v3-turbo"})
-        if not r.get("ok"):
-            raise Fail(f"transcript.generate background: {r.get('error')}")
-        job = (r.get("result") or {}).get("job")
-        # a second connection probes the UI thread while the first one may sit in a screenshot
-        probe, lat, n, t0, shots, noframe = App(a.port), [], 0, time.time(), [], []
-        th = None
-        while time.time() - t0 < 600:
-            if n % 20 == 0:
-                wake()
-            t = time.time()
-            rr = probe.call("ui.ayp.state", timeout=5)
-            lat.append(time.time() - t)
-            n += 1
-            if not rr.get("ok"):
-                raise Fail(f"ui.ayp.state failed during the job: {rr.get('error')}")
-            if n % 3 == 0 and not (th and th.is_alive()):
-                th = threading.Thread(target=shoot, args=(app, work, shots, noframe), daemon=True)
-                th.start()
-            js = [j for j in probe_jobs(probe) if job is None or j.get("id") == job]
-            if js and all(j.get("finished") for j in js):
-                if th:
-                    th.join(80)  # the first connection is free again
-                words = wait(lambda: app.ex("playhead.set", {"seconds": 5}) and len(app.res("transcript.inspect")["words"]), 30, 1) or 0  # applied on a UI frame; a hidden window draws few, so nudge it
-                st = js[0].get("state") or js[0].get("status") or ""
-                note = f"job {job} ran {time.time() - t0:.0f} s; {n} state replies on a 2nd connection + {len(shots)} screenshots ({len(noframe)} not taken: {noframe[:1]}), slowest {max(lat):.2f} s; {words} words {st}"
-                if max(lat) > 2.0:
-                    raise Fail(note + " (a reply took over 2 s: the UI froze)")
-                if not words:
-                    return "SKIP", note + "; Whisper gave no words in AYPEditor, nothing to fake"
-                return "PASS", note
-            time.sleep(0.4)
-        raise Fail("the job did not finish in 10 min")
-    run("b. chép lời in the background, UI stays responsive", bg)
+        app.ex("playhead.set", {"seconds": 5})
+        app.call("ui.ayp.open", {"tab": "cut", "side": "ai"})
 
-    # (c) no key: the key error card
-    def nokey():
-        if has_key():
-            return "SKIP", "a key exists on this machine; (c) needs none"
-        h0 = app.hist()
-        r = app.call("ui.ayp.chat.send", {"text": "cắt bớt khoảng lặng ở 20 giây đầu"})
-        if not r.get("ok"):
-            raise Fail(f"send refused: {r.get('error')}")
-        if not wait(lambda: not app.call("ui.ayp.chat.state")["result"]["busy"], 15):
-            raise Fail("the turn never ended")
-        cs = cards(app)
-        errs = [c["Error"] for c in cs if kind(c) == "Error"]
-        if not errs or "khoá" not in errs[-1]:
-            raise Fail(f"no key-error card: {json.dumps(cs, ensure_ascii=False)[:300]}")
-        if a.shot:
-            app.call("ui.ayp.open", {"tab": "cut", "side": "ai"})
-            time.sleep(0.5)
-            app.call("ui.screenshot", {"path": a.shot})
-        if app.hist() != h0:
-            raise Fail("the failed turn changed the project")
-        return "PASS", f"cards {[kind(c) for c in cs]}; Error card: {errs[-1]!r}; project untouched"
-    run("c. no key: chat shows the key error card", nokey)
+        # (a) three AYP buttons by key
+        def keys():
+            out = []
+            for key in ("markers.add", "audio.fadeIn", "graphics.newText"):
+                h0 = app.hist()
+                r = app.call("ui.ayp.run", {"key": key})
+                if not r.get("ok"):
+                    raise Fail(f"{key}: {r.get('error')}")
+                out.append(f"{key} +{app.hist() - h0} step(s), status {r['result'].get('status')!r}")
+            if app.call("ui.ayp.run", {"key": "no.such.key"}).get("ok"):
+                raise Fail("an unknown key was accepted")
+            if app.hist() <= base:
+                raise Fail("no key changed the project")
+            return "PASS", "; ".join(out) + "; unknown key refused"
+        run("a. ui.ayp.run for three AYP keys", keys)
+        for _ in range(40):
+            if app.hist() <= base:
+                break
+            app.ex("edit.undo")
 
-    # (d) live turn, (e) manual edit refused during it
-    if not has_key():
-        row("d. live turn: Plan → approve → Result → Hoàn tác cả lượt", "SKIP", "chờ khoá (no Anthropic key on this machine; none requested)")
-        row("e. manual edit during a turn is refused", "SKIP", "chờ khoá (needs a running turn; the no-key turn ends at once)")
-    else:
-        before = {}
-
-        def live():
-            app.res("file.save")
-            before["seq"] = app.seq()
-            n0 = len(cards(app))  # the chat keeps old cards: only the ones after this send are this turn's
-            app.call("ui.ayp.chat.send", {"text": a.prompt})
-            refused, plan_seen = None, False
-            t0 = time.time()
-            while time.time() - t0 < 180:
-                wake()
-                s = app.call("ui.ayp.chat.state")["result"]
-                if s["busy"] and refused is None:
-                    e = app.ex("markers.add")
-                    refused = "" if e.get("ok") else e.get("error")  # accepted ("") is a FAIL; never undo here, it would undo the AI's step
-                ks = [kind(c) for c in s["cards"][n0 + 1:]]
-                last = s["cards"][-1] if s["cards"] else {}
-                if ks and ks[-1] == "Choice" and (last.get("Choice") or {}).get("picked") is None:
-                    app.call("ui.ayp.chat.choose", {"option": 0})  # the first option is the closest to what was asked
-                if ks and ks[-1] == "Plan" and (last.get("Plan") or {}).get("state") == "Pending":  # waiting on us, so not "busy"
-                    plan_seen = True
-                    app.call("ui.ayp.chat.plan", {"approve": True})
-                if not s["busy"] and ks and ks[-1] in ("Result", "Error", "Text"):
-                    break
-                time.sleep(1)
-            cs = cards(app)[n0:]
-            ks = [kind(c) for c in cs]
-            if "Result" not in ks:
-                raise Fail(f"no Result card: {json.dumps(cs, ensure_ascii=False)[:600]}")
-            r = app.call("ui.ayp.chat.undoTurn", {"card": n0 + max(i for i, k in enumerate(ks) if k == "Result")})
+        # (b) background transcription, the UI keeps answering
+        def bg():
+            app.ex("timeline.select", {"clips": [v, au]})
+            r = app.ex("transcript.generate", {"background": True, "language": "vi", "model": "whisper-large-v3-turbo"})
             if not r.get("ok"):
-                lab = [str(x)[:40] for x in app.res("history.list")["undo"][-4:]]
-                raise Fail(f"cards {ks}; undoTurn: {r.get('error')}; last undo steps {lab}")
-            same = app.seq() == before["seq"]
-            if not same:
-                raise Fail(f"cards {ks}; sequence differs after Hoàn tác cả lượt")
-            before["refused"] = refused
-            txt = [(kind(c), str(next(iter(c.values())))[:160]) for c in cs]
-            # the model decides whether a request needs a plan: a one-step edit may go without one
-            return "PASS", f"{'Plan approved' if plan_seen else 'no Plan card (the model went straight to the edit)'}; cards {txt}; sequence.inspect equal after Hoàn tác cả lượt"
-        run("d. live turn: Plan → approve → Result → Hoàn tác cả lượt", live)
-        row("   requests", "INFO", "1 live turn (the plan and result take a few API requests inside it)")
-        r = before.get("refused")
-        row("e. manual edit during a turn is refused", "PASS" if r else ("SKIP" if r is None else "FAIL"),
-            f"markers.add while busy → {r!r}" if r else "turn never seen busy" if r is None else "the edit was accepted while busy")
+                raise Fail(f"transcript.generate background: {r.get('error')}")
+            job = (r.get("result") or {}).get("job")
+            # a second connection probes the UI thread while the first one may sit in a screenshot
+            probe, lat, n, t0, shots, noframe = App(a.port), [], 0, time.time(), [], []
+            th = None
+            while time.time() - t0 < 600:
+                if n % 20 == 0:
+                    wake()
+                t = time.time()
+                rr = probe.call("ui.ayp.state", timeout=5)
+                lat.append(time.time() - t)
+                n += 1
+                if not rr.get("ok"):
+                    raise Fail(f"ui.ayp.state failed during the job: {rr.get('error')}")
+                if n % 3 == 0 and not (th and th.is_alive()):
+                    th = threading.Thread(target=shoot, args=(app, work, shots, noframe), daemon=True)
+                    th.start()
+                js = [j for j in probe_jobs(probe) if job is None or j.get("id") == job]
+                if js and all(j.get("finished") for j in js):
+                    if th:
+                        th.join(80)  # the first connection is free again
+                    words = wait(lambda: app.ex("playhead.set", {"seconds": 5}) and len(app.res("transcript.inspect")["words"]), 30, 1) or 0  # applied on a UI frame; a hidden window draws few, so nudge it
+                    st = js[0].get("state") or js[0].get("status") or ""
+                    note = f"job {job} ran {time.time() - t0:.0f} s; {n} state replies on a 2nd connection + {len(shots)} screenshots ({len(noframe)} not taken: {noframe[:1]}), slowest {max(lat):.2f} s; {words} words {st}"
+                    if max(lat) > 2.0:
+                        raise Fail(note + " (a reply took over 2 s: the UI froze)")
+                    if not words:
+                        return "SKIP", note + "; Whisper gave no words in AYPEditor, nothing to fake"
+                    return "PASS", note
+                time.sleep(0.4)
+            raise Fail("the job did not finish in 10 min")
+        run("b. chép lời in the background, UI stays responsive", bg)
 
-    app.ex("file.newProject", {"name": "Untitled"})
-    shutil.rmtree(work, ignore_errors=True)
+        # (c) no key: the key error card
+        def nokey():
+            if has_key():
+                return "SKIP", "a key exists on this machine; (c) needs none"
+            h0 = app.hist()
+            r = app.call("ui.ayp.chat.send", {"text": "cắt bớt khoảng lặng ở 20 giây đầu"})
+            if not r.get("ok"):
+                raise Fail(f"send refused: {r.get('error')}")
+            if not wait(lambda: not app.call("ui.ayp.chat.state")["result"]["busy"], 15):
+                raise Fail("the turn never ended")
+            cs = cards(app)
+            errs = [c["Error"] for c in cs if kind(c) == "Error"]
+            if not errs or "khoá" not in errs[-1]:
+                raise Fail(f"no key-error card: {json.dumps(cs, ensure_ascii=False)[:300]}")
+            if a.shot:
+                app.call("ui.ayp.open", {"tab": "cut", "side": "ai"})
+                time.sleep(0.5)
+                app.call("ui.screenshot", {"path": a.shot})
+            if app.hist() != h0:
+                raise Fail("the failed turn changed the project")
+            return "PASS", f"cards {[kind(c) for c in cs]}; Error card: {errs[-1]!r}; project untouched"
+        run("c. no key: chat shows the key error card", nokey)
+
+        # (d) live turn, (e) manual edit refused during it
+        if not has_key():
+            row("d. live turn: Plan → approve → Result → Hoàn tác cả lượt", "SKIP", "chờ khoá (no Anthropic key on this machine; none requested)")
+            row("e. manual edit during a turn is refused", "SKIP", "chờ khoá (needs a running turn; the no-key turn ends at once)")
+        else:
+            before = {}
+
+            def live():
+                app.res("file.save")
+                before["seq"] = app.seq()
+                n0 = len(cards(app))  # the chat keeps old cards: only the ones after this send are this turn's
+                app.call("ui.ayp.chat.send", {"text": a.prompt})
+                refused, plan_seen = None, False
+                t0 = time.time()
+                while time.time() - t0 < 180:
+                    wake()
+                    s = app.call("ui.ayp.chat.state")["result"]
+                    if s["busy"] and refused is None:
+                        e = app.ex("markers.add")
+                        refused = "" if e.get("ok") else str(e.get("error"))  # accepted ("") is a FAIL; never undo here, it would undo the AI's step
+                    before["refused"] = refused  # kept even if (d) fails later
+                    ks = [kind(c) for c in s["cards"][n0 + 1:]]
+                    last = s["cards"][-1] if s["cards"] else {}
+                    if ks and ks[-1] == "Choice" and (last.get("Choice") or {}).get("picked") is None:
+                        app.call("ui.ayp.chat.choose", {"option": 0})  # the first option is the closest to what was asked
+                    if ks and ks[-1] == "Plan" and (last.get("Plan") or {}).get("state") == "Pending":  # waiting on us, so not "busy"
+                        plan_seen = True
+                        app.call("ui.ayp.chat.plan", {"approve": True})
+                    if not s["busy"] and ks and ks[-1] in ("Result", "Error", "Text"):
+                        break
+                    time.sleep(1)
+                cs = cards(app)[n0:]
+                ks = [kind(c) for c in cs]
+                if "Result" not in ks:
+                    raise Fail(f"no Result card: {json.dumps(cs, ensure_ascii=False)[:600]}")
+                r = app.call("ui.ayp.chat.undoTurn", {"card": n0 + max(i for i, k in enumerate(ks) if k == "Result")})
+                if not r.get("ok"):
+                    lab = [str(x)[:40] for x in app.res("history.list")["undo"][-4:]]
+                    raise Fail(f"cards {ks}; undoTurn: {r.get('error')}; last undo steps {lab}")
+                same = app.seq() == before["seq"]
+                if not same:
+                    raise Fail(f"cards {ks}; sequence differs after Hoàn tác cả lượt")
+                txt = [(kind(c), str(next(iter(c.values())))[:160]) for c in cs]
+                # the model decides whether a request needs a plan: a one-step edit may go without one
+                return "PASS", f"{'Plan approved' if plan_seen else 'no Plan card (the model went straight to the edit)'}; cards {txt}; sequence.inspect equal after Hoàn tác cả lượt"
+            run("d. live turn: Plan → approve → Result → Hoàn tác cả lượt", live)
+            row("   requests", "INFO", "1 live turn (the plan and result take a few API requests inside it)")
+            r = before.get("refused")
+            if r is None:
+                res, note = "SKIP", "turn never seen busy"
+            elif r == "":
+                res, note = "FAIL", "the edit was accepted while busy"
+            elif "AI đang làm" in r:
+                res, note = "PASS", f"markers.add while busy → {r!r}"
+            else:
+                res, note = "FAIL", f"refused with the wrong text: {r!r}"
+            row("e. manual edit during a turn is refused", res, note)
+
+    finally:  # always, in this order, each step guarded: stop a running AI turn, empty the project, drop the scratch copy
+        try:
+            if app.call("ui.ayp.chat.state", timeout=10).get("result", {}).get("busy"):
+                app.call("ui.ayp.chat.stop", timeout=10)
+        except Exception as e:
+            print(f"cleanup: could not stop the chat turn: {e}", file=sys.stderr)
+        try:
+            app.ex("file.newProject", {"name": "Untitled"})
+        except Exception as e:
+            print(f"cleanup: could not reset the project: {e}", file=sys.stderr)
+        try:
+            shutil.rmtree(work)
+        except OSError as e:
+            print(f"cleanup: could not remove {work}: {e}", file=sys.stderr)
     counts = {}
     for _, r, _ in rows:
         counts[r] = counts.get(r, 0) + 1
