@@ -1,4 +1,5 @@
 //! AYPEditor's CapCut-style interface: Vietnamese catalog (`vi`) and, in later tasks, the panels.
+pub mod chat;
 pub mod library;
 pub mod palette;
 pub mod side;
