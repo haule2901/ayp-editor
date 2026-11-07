@@ -15,6 +15,10 @@ pub enum Outcome {
 
 const MAX_CHARS: usize = 20_000;
 const NEEDS_PLAN: &str = "Việc này đổi nhiều thứ: gọi propose_plan trước";
+const ONE_STEP: &str = "Mỗi lượt AI đã là một bước hoàn tác — không dùng lệnh này trong chat";
+/// The turn is the undo group: a group of its own would outlive it, and undo / redo would reach
+/// below the turn's mark into the user's own steps.
+const NOT_IN_CHAT: [&str; 4] = ["history.beginGroup", "history.endGroup", "edit.undo", "edit.redo"];
 
 fn tool(name: &str, description: &str, strict: bool, properties: Value) -> Value {
     let required: Vec<&String> = properties.as_object().map(|o| o.keys().collect()).unwrap_or_default();
@@ -149,6 +153,9 @@ fn run_command(app: &mut FilmcraftApp, ctx: &egui::Context, input: &Value, edits
         Some(p) if p.is_object() => p.clone(),
         Some(_) => return Err(Outcome::Error("`params` phải là một đối tượng JSON".into())),
     };
+    if NOT_IN_CHAT.contains(&id) {
+        return Err(Outcome::Error(ONE_STEP.into()));
+    }
     // UI-only commands (menus::UI_COMMANDS) are not in the engine list: they count as not journaled
     if edits_without_plan >= 3 && filmcraft_engine::find_command(id).is_some_and(|c| c.journal) {
         return Err(Outcome::Error(NEEDS_PLAN.into()));
@@ -265,7 +272,7 @@ mod tests {
     #[test]
     fn big_changes_need_a_plan() {
         let (mut app, ctx) = demo();
-        let params = json!({"id": "edit.undo", "params": {}});
+        let params = json!({"id": "sequence.addTracks", "params": {"video": 1, "audio": 0}});
         // a read command is never held back
         assert!(matches!(call(&mut app, &ctx, "run_command", json!({"id": "sequence.inspect", "params": {}}), 9), Outcome::Done(_)));
         let o = call(&mut app, &ctx, "run_command", params.clone(), 3);

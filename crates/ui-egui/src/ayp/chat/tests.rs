@@ -453,3 +453,35 @@ fn the_model_is_remembered_in_aypeditor_json() {
     assert_eq!(app.ayp_chat.model, api::DEFAULT_MODEL);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn an_empty_reply_does_not_break_the_conversation() {
+    let (mut app, ctx) = demo();
+    let log = script(&mut app, vec![reply("end_turn", json!([])), reply("end_turn", json!([text("Đây.")]))]);
+    send(&mut app, "một").unwrap();
+    settle(&mut app, &ctx);
+    send(&mut app, "hai").unwrap();
+    settle(&mut app, &ctx);
+    assert_eq!(app.ayp_chat.cards.last(), Some(&Card::Text("Đây.".into())));
+    let log = log.lock().unwrap();
+    assert_eq!(log.len(), 2);
+    // the API refuses an assistant message with empty content anywhere but last
+    assert!(!messages(&log[1]).iter().any(|m| m["role"] == "assistant" && m["content"] == json!([])), "{}", log[1]["messages"]);
+}
+
+#[test]
+fn the_ai_cannot_group_or_undo_inside_its_turn() {
+    let (mut app, ctx) = demo();
+    let ids = ["history.beginGroup", "history.endGroup", "edit.undo", "edit.redo"];
+    let calls: Vec<Value> = ids.iter().enumerate().map(|(i, id)| run_cmd(&format!("g{i}"), id, json!({}))).collect();
+    let log = script(&mut app, vec![reply("tool_use", json!(calls)), reply("end_turn", json!([text("Ok.")]))]);
+    send(&mut app, "Gom nhóm giúp mình").unwrap();
+    settle(&mut app, &ctx);
+    let results = last_user_content(&log.lock().unwrap()[1]);
+    let msg = "Mỗi lượt AI đã là một bước hoàn tác — không dùng lệnh này trong chat";
+    for (i, r) in results.as_array().unwrap().iter().enumerate() {
+        assert_eq!((r["is_error"].as_bool(), r["content"].as_str()), (Some(true), Some(msg)), "{}", ids[i]);
+    }
+    assert_ne!(app.session.history.limit, usize::MAX, "no group outlives the turn");
+    assert!(app.session.execute("history.endGroup", json!({"label": "x"})).is_err(), "no group was left open");
+}

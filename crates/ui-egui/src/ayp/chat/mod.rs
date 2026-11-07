@@ -306,7 +306,10 @@ fn fail(app: &mut FilmcraftApp, why: String) {
 fn on_reply(app: &mut FilmcraftApp, msg: &Value) {
     let chat = &mut app.ayp_chat;
     let content = msg.get("content").cloned().unwrap_or_else(|| json!([]));
-    chat.messages.push(json!({"role": "assistant", "content": content}));
+    // an empty assistant message would make every later request a 400: it is not kept at all
+    if content.as_array().is_some_and(|c| !c.is_empty()) {
+        chat.messages.push(json!({"role": "assistant", "content": content}));
+    }
     let mut calls = VecDeque::new();
     for b in content.as_array().into_iter().flatten() {
         match b.get("type").and_then(Value::as_str) {
