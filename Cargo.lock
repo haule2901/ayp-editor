@@ -1698,8 +1698,10 @@ dependencies = [
  "open",
  "pollster 0.4.0",
  "rfd",
+ "rustls-rustcrypto",
  "serde_json",
  "sys-locale",
+ "ureq",
  "winit",
  "winresource",
  "zbus",
@@ -2191,6 +2193,7 @@ dependencies = [
  "objc2-core-media",
  "objc2-core-video",
  "objc2-video-toolbox",
+ "security-framework",
  "windows 0.62.2",
 ]
 

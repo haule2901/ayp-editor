@@ -171,7 +171,34 @@ pub struct HostHooks {
     /// Files or an image on the system clipboard, for Paste in the Timeline and the Project panel
     /// (#611). Without it Paste only pastes clips copied in FilmCraft.
     pub clipboard_media: Option<Box<dyn FnMut() -> Option<ClipboardMedia>>>,
+    /// AYP: HTTPS POST for the AI chat. Called from a worker thread; without it (the web app) the
+    /// chat says it is unavailable.
+    pub http_post: Option<HttpPost>,
+    /// AYP: a secret from the system keychain by account name ("anthropic").
+    pub secret_get: Option<Box<dyn Fn(&str) -> Option<String>>>,
+    /// AYP: save a secret (account, value); an empty value deletes it.
+    pub secret_set: Option<Box<dyn FnMut(&str, &str) -> Result<(), String>>>,
 }
+
+/// One HTTPS POST for [`HostHooks::http_post`].
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct HttpRequest {
+    pub url: String,
+    pub headers: Vec<(String, String)>,
+    pub body: String,
+}
+
+/// The answer to an [`HttpRequest`]: any status counts (a 429 or 500 is an answer, not an error).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct HttpResponse {
+    pub status: u16,
+    /// The `retry-after` header in seconds, when present and numeric.
+    pub retry_after: Option<f64>,
+    pub body: String,
+}
+
+/// Shared and callable from any thread.
+pub type HttpPost = std::sync::Arc<dyn Fn(&HttpRequest) -> Result<HttpResponse, String> + Send + Sync>;
 
 /// What [`HostHooks::clipboard_media`] found on the system clipboard.
 pub enum ClipboardMedia {
