@@ -153,3 +153,22 @@ above the timeline with a caption track, video and audio tracks).
   history step; their rendered look was not judged frame by frame, and Warp Stabilizer / Auto Reframe started no analysis job.
 - PASS(panel) / PASS(ai) / PASS(dialog) / PASS(cmd) rows ran the command with chosen params, not a click on the embedded
   panel's controls; the two PASS(no-op click) rows clicked a button that found nothing to remove on this clip.
+
+## Plan 2 — AI chat
+
+Run by `tools/ayp-editor/check_chat.py --port 9899 --media <clip>` against a running AYPEditor, on a copy of the
+0716 test clip (first 60 s) in a scratch project; the app is left on an empty project. The AI used
+`claude-sonnet-5-5` with a key saved in the macOS Keychain by the user (the tool never reads it).
+
+| # | Check | Result | Notes |
+|---|---|---|---|
+| a | `ui.ayp.run` for three AYP keys (`markers.add`, `audio.fadeIn`, `graphics.newText`) | **PASS** | each added one undo step; an unknown key is refused |
+| b | Chép lời (Whisper large-v3-turbo, vi) in the background; the UI keeps answering | **PASS** | 60–100 s job, 121 `ui.ayp.state` replies on a second connection (slowest 0.38 s) and 40 `ui.screenshot` calls meanwhile; 260 words after the job |
+| c | No key: the chat shows the key error card | **PASS** (earlier run, before a key existed) | cards `User`, `Error`: "Nhập khoá Anthropic ở ⚙ Cài đặt AI"; project untouched. Not repeatable now that a key exists |
+| d | Live turn, then Hoàn tác cả lượt | **PASS** | "xoá 5 giây đầu của clip trên timeline, kéo phần còn lại lên": `Doing` → 2 `Text` → `Result` (`timeline.trim`, one undo step "AI: …"); the model chose no Plan card. `ui.ayp.chat.undoTurn` → `sequence.inspect` equal to before (1803 frames back from 1653) |
+| d2 | The brief's request "cắt bớt khoảng lặng ở 20 giây đầu" | **PASS(flow) / no-op** | Plan card shown and approved → `transcript.removePauses` → `removed: 0` (no pause ≥ 0.6 s in these 20 s), so nothing to undo. A `Result` card still appeared for the no-op turn and `undoTurn` on it answers "Đã có thao tác sau lượt này" (no `AI:` step exists) — a misleading card, to fix |
+| e | Manual edit during a turn is refused | **PASS** | `markers.add` while busy → "AI đang làm — bấm Dừng trước" |
+
+Notes: the app only draws (and so only advances a chat turn or applies a background transcript) while its window is
+visible: with the display asleep a turn sits on its `User` card and a finished background transcript lands late.
+The checker wakes the display and brings the window forward before it drives the chat.
