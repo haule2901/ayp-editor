@@ -59,20 +59,20 @@ pub fn schemas() -> Value {
         ),
         tool(
             "propose_plan",
-            "Show the user a plan and wait for approval. Use it before deleting or cutting many clips, replacing captions, or making more than 3 edits. Do not run those edits until the user approves.",
+            "Show the user a plan of 1 to 12 steps and wait for approval. Use it before deleting or cutting many clips, replacing captions, or making more than 3 edits. Do not run those edits until the user approves.",
             true,
             json!({
                 "title": {"type": "string"},
-                "steps": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 12}
+                "steps": {"type": "array", "items": {"type": "string"}, "description": "1 to 12 short steps."}
             })
         ),
         tool(
             "offer_choices",
-            "Ask the user to pick one of 2 to 4 options, for example which caption or edit style to use. The chosen label comes back as the answer.",
+            "Ask the user to pick one of 2 to 4 options (no fewer, no more), for example which caption or edit style to use. The chosen label comes back as the answer.",
             true,
             json!({
                 "question": {"type": "string"},
-                "options": {"type": "array", "minItems": 2, "maxItems": 4, "items": {
+                "options": {"type": "array", "description": "2 to 4 options.", "items": {
                     "type": "object",
                     "properties": {"label": {"type": "string"}, "detail": {"type": "string"}},
                     "required": ["label", "detail"],
@@ -199,6 +199,24 @@ mod tests {
             // run_command.params is an open object, which strict mode rejects: that one tool is not strict
             assert_eq!(t["strict"].as_bool().unwrap(), n != "run_command", "{n}");
         }
+    }
+
+    #[test]
+    fn strict_schemas_use_only_supported_keywords() {
+        fn walk(v: &Value, path: &str) {
+            match v {
+                Value::Object(o) => {
+                    for (k, x) in o {
+                        let banned = ["minItems", "maxItems", "minimum", "maximum", "multipleOf", "minLength", "maxLength"];
+                        assert!(!banned.contains(&k.as_str()), "{path}/{k} is not supported in strict schemas");
+                        walk(x, &format!("{path}/{k}"));
+                    }
+                }
+                Value::Array(a) => a.iter().enumerate().for_each(|(i, x)| walk(x, &format!("{path}/{i}"))),
+                _ => {}
+            }
+        }
+        walk(&schemas(), "");
     }
 
     #[test]
