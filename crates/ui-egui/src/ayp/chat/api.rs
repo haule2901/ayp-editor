@@ -93,9 +93,14 @@ pub fn retry_delay(status: u16, retry_after: Option<f64>, attempt: u32) -> Optio
 /// Send `req` on the `ayp-chat` thread. The receiver gets one result; if `cancel` is set the worker
 /// stops (mid-wait too) and sends nothing.
 pub fn spawn(post: HttpPost, req: HttpRequest, cancel: Arc<AtomicBool>) -> Receiver<Result<Value, ApiError>> {
+    spawn_with(post, req, cancel, Duration::from_secs(1))
+}
+
+/// `spawn` with the base of the network-error backoff (`base << attempt`) given, so tests stay fast.
+fn spawn_with(post: HttpPost, req: HttpRequest, cancel: Arc<AtomicBool>, base: Duration) -> Receiver<Result<Value, ApiError>> {
     let (tx, rx) = channel();
     let work = move || {
-        let run = std::panic::AssertUnwindSafe(|| attempt_loop(&post, &req, &cancel));
+        let run = std::panic::AssertUnwindSafe(|| attempt_loop(&post, &req, &cancel, base));
         let out = std::panic::catch_unwind(run).unwrap_or_else(|_| Some(Err(ApiError::Bad("lỗi nội bộ khi gọi Claude".into()))));
         if let Some(out) = out {
             let _ = tx.send(out); // receiver gone: nothing to tell
@@ -106,28 +111,36 @@ pub fn spawn(post: HttpPost, req: HttpRequest, cancel: Arc<AtomicBool>) -> Recei
     rx
 }
 
+/// Sleep `d` in 100 ms slices; false if `cancel` was set meanwhile.
+fn pause(d: Duration, cancel: &AtomicBool) -> bool {
+    let mut left = d;
+    while !left.is_zero() {
+        if cancel.load(Ordering::SeqCst) {
+            return false;
+        }
+        let slice = left.min(Duration::from_millis(100));
+        std::thread::sleep(slice);
+        left -= slice;
+    }
+    !cancel.load(Ordering::SeqCst)
+}
+
 /// `None` = cancelled.
-fn attempt_loop(post: &HttpPost, req: &HttpRequest, cancel: &AtomicBool) -> Option<Result<Value, ApiError>> {
+fn attempt_loop(post: &HttpPost, req: &HttpRequest, cancel: &AtomicBool, base: Duration) -> Option<Result<Value, ApiError>> {
     for attempt in 0.. {
         if cancel.load(Ordering::SeqCst) {
             return None;
         }
-        let resp = match post(req) {
-            Ok(r) => r,
-            Err(e) => return Some(Err(ApiError::Network(e))),
+        let wait = match post(req) {
+            Ok(resp) => match retry_delay(resp.status, resp.retry_after, attempt) {
+                Some(w) => w,
+                None => return Some(parse(&resp)),
+            },
+            Err(e) if attempt >= MAX_RETRIES => return Some(Err(ApiError::Network(e))),
+            Err(_) => base * (1u32 << attempt),
         };
-        let wait = match retry_delay(resp.status, resp.retry_after, attempt) {
-            Some(w) => w,
-            None => return Some(parse(&resp)),
-        };
-        let mut left = wait;
-        while !left.is_zero() {
-            if cancel.load(Ordering::SeqCst) {
-                return None;
-            }
-            let slice = left.min(Duration::from_millis(100));
-            std::thread::sleep(slice);
-            left -= slice;
+        if !pause(wait, cancel) {
+            return None;
         }
     }
     None
@@ -221,13 +234,41 @@ mod tests {
     }
 
     #[test]
-    fn spawn_turns_a_panic_and_a_network_error_into_errors() {
+    fn spawn_turns_a_panic_into_an_error() {
         let boom: HttpPost = Arc::new(|_| panic!("boom"));
         let rx = spawn(boom, req(), Arc::new(AtomicBool::new(false)));
         assert!(matches!(rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap(), Err(ApiError::Bad(_))));
-        let down: HttpPost = Arc::new(|_| Err("offline".into()));
-        let rx = spawn(down, req(), Arc::new(AtomicBool::new(false)));
-        assert!(matches!(rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap(), Err(ApiError::Network(m)) if m == "offline"));
+    }
+
+    fn counting(fail_first: u32) -> (HttpPost, Arc<Mutex<u32>>) {
+        let calls = Arc::new(Mutex::new(0u32));
+        let c = calls.clone();
+        let post: HttpPost = Arc::new(move |_| {
+            let mut n = c.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            *n += 1;
+            if *n <= fail_first {
+                Err("offline".into())
+            } else {
+                Ok(resp(200, None, r#"{"content":[],"stop_reason":"end_turn"}"#))
+            }
+        });
+        (post, calls)
+    }
+
+    #[test]
+    fn network_errors_are_retried_then_succeed() {
+        let (post, calls) = counting(2);
+        let rx = spawn_with(post, req(), Arc::new(AtomicBool::new(false)), Duration::from_millis(1));
+        assert!(rx.recv_timeout(Duration::from_secs(5)).unwrap().is_ok());
+        assert_eq!(*calls.lock().unwrap(), 3);
+    }
+
+    #[test]
+    fn network_errors_give_up_after_four_calls() {
+        let (post, calls) = counting(u32::MAX);
+        let rx = spawn_with(post, req(), Arc::new(AtomicBool::new(false)), Duration::from_millis(1));
+        assert!(matches!(rx.recv_timeout(Duration::from_secs(5)).unwrap(), Err(ApiError::Network(m)) if m == "offline"));
+        assert_eq!(*calls.lock().unwrap(), 4);
     }
 
     #[test]
