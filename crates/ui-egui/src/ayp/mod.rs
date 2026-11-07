@@ -7,6 +7,26 @@ pub mod tabs;
 pub mod toolbar;
 pub mod vi;
 
+pub(crate) fn side_name(s: crate::state::AypSideTab) -> &'static str {
+    match s {
+        crate::state::AypSideTab::Props => "props",
+        crate::state::AypSideTab::Ai => "ai",
+    }
+}
+
+/// What `ui.ayp.state` reports (also the chat's `get_state`).
+pub(crate) fn state_json(app: &crate::FilmcraftApp) -> serde_json::Value {
+    serde_json::json!({
+        "workspace": app.ui.workspace,
+        "tab": app.ui.ayp_tab,
+        "side": side_name(app.ui.ayp_side),
+        "palette": app.ui.ayp_palette,
+        "selection": app.session.state.selection.iter().map(|c| c.0).collect::<Vec<_>>(),
+        "playhead": app.session.playhead().0,
+        "sequence": app.session.state.active_sequence.map(|i| i.0),
+    })
+}
+
 /// Run a command the way an AYP button does: clear the reason an earlier click left, parse `params`,
 /// invoke; a failure is said on the status line as "Chưa làm được: <lý do>".
 pub(crate) fn run(app: &mut crate::FilmcraftApp, ctx: &egui::Context, cmd: &str, params: &str) -> Result<serde_json::Value, String> {

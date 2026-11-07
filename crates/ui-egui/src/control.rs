@@ -57,13 +57,6 @@ pub enum Outcome {
     },
 }
 
-fn side_name(s: crate::state::AypSideTab) -> &'static str {
-    match s {
-        crate::state::AypSideTab::Props => "props",
-        crate::state::AypSideTab::Ai => "ai",
-    }
-}
-
 fn ok(v: Value) -> Outcome {
     Outcome::Done(json!({"ok": true, "result": v}))
 }
@@ -121,15 +114,7 @@ pub fn handle(app: &mut FilmcraftApp, ctx: &egui::Context, req: &ControlRequest)
         },
         "ui.menu.list" => ok(serde_json::to_value(crate::menus::menu_items(app)).unwrap_or_default()),
         "ui.inspect" => ok(inspect(app, ctx)),
-        "ui.ayp.state" => ok(json!({
-            "workspace": app.ui.workspace,
-            "tab": app.ui.ayp_tab,
-            "side": side_name(app.ui.ayp_side),
-            "palette": app.ui.ayp_palette,
-            "selection": app.session.state.selection.iter().map(|c| c.0).collect::<Vec<_>>(),
-            "playhead": app.session.playhead().0,
-            "sequence": app.session.state.active_sequence.map(|i| i.0),
-        })),
+        "ui.ayp.state" => ok(crate::ayp::state_json(app)),
         "ui.ayp.tabs" => {
             use crate::ayp::tabs::{Kind, TABS};
             ok(Value::Array(
@@ -170,7 +155,7 @@ pub fn handle(app: &mut FilmcraftApp, ctx: &egui::Context, req: &ControlRequest)
             if let Some(sd) = side {
                 app.ui.ayp_side = sd;
             }
-            ok(json!({"tab": app.ui.ayp_tab, "side": side_name(app.ui.ayp_side)}))
+            ok(json!({"tab": app.ui.ayp_tab, "side": crate::ayp::side_name(app.ui.ayp_side)}))
         }
         "perf.stats" => ok(crate::perf::stats(app)),
         "ui.elements" => {
